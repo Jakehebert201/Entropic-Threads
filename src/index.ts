@@ -1,6 +1,6 @@
 import Decimal from "break_eternity.js";
 import { loadState, saveState, newState, clearState } from "./state.js";
-import { tick, buyMax, buyMaxAll } from "./game.js";
+import { tick, buyOne, buyMaxAll } from "./game.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT } from "./constants.js";
@@ -23,7 +23,7 @@ type RowRefs = {
   bought: HTMLSpanElement;
   multiplier: HTMLSpanElement;
   nextCost: HTMLSpanElement;
-  buyMax: HTMLButtonElement;
+  buy1: HTMLButtonElement;
 };
 
 function makeRow(tier: number): RowRefs {
@@ -43,25 +43,25 @@ function makeRow(tier: number): RowRefs {
   const multiplier = document.createElement("span");
   const nextCost = document.createElement("span");
 
-  const buyMaxBtn = document.createElement("button");
-  buyMaxBtn.textContent = "Max";
+  const buy1Btn = document.createElement("button");
+  buy1Btn.textContent = "Buy 1";
 
   const buttonGroup = document.createElement("div");
   buttonGroup.className = "gen-row-buttons";
-  buttonGroup.append(buyMaxBtn);
+  buttonGroup.append(buy1Btn);
 
   row.append(name, units, bought, multiplier, nextCost, buttonGroup);
   gensContainer.appendChild(row);
 
   // Wire handlers
-  buyMaxBtn.addEventListener("click", () => {
-    const got: boolean = buyMax(state, tier); // returns success/failure
+  buy1Btn.addEventListener("click", () => {
+    const got: boolean = buyOne(state, tier);
     if (got) {
       render();
     }
   });
 
-  return { row, name, units, bought, multiplier, nextCost, buyMax: buyMaxBtn };
+  return { row, name, units, bought, multiplier, nextCost, buy1: buy1Btn };
 }
 
 const state = loadState();
@@ -93,13 +93,13 @@ if (maxAllBtn) {
 // ---- formatting helpers ----
 function format(d: Dec): string {
   // small -> locale number; large -> scientific like 1.234e123
-  if (d.lessThan(1e6)) return d.toNumber().toLocaleString();
+  if (d.lessThan(1e6)) return (Math.round(d.toNumber() * 10) / 10).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
   // @ts-ignore (mantissa/exponent exist at runtime in break_eternity)
   if (typeof d.mantissa === "number" && typeof d.exponent === "number") {
     // @ts-ignore
     return `${d.mantissa.toFixed(3)}e${d.exponent}`;
   }
-  return d.toString();
+  return d.toNumber().toExponential(3);
 }
 
 // ---- render ----
@@ -117,7 +117,7 @@ function render() {
     r.nextCost.textContent = format(nextCost(cfg, gen.bought));
     // enable/disable buttons based on affordability
     const canBuy = state.strings.greaterThanOrEqualTo(nextCost(cfg, gen.bought));
-    r.buyMax.disabled = !canBuy;
+    r.buy1.disabled = !canBuy;
   }
 }
 
