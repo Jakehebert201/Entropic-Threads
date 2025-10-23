@@ -1,0 +1,34 @@
+{
+  "name": "entropic-threads",
+  "version": "1.0.0",
+  "description": "This is a Javascript incremental game using break_infinity.js.  \r The unique aspect of this game is \"braiding\", which boosts production of alternating chains of generators.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "vite",
+    "preview": "vite preview",
+    "start": "vite preview",
+    "clean": "rimraf dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jakehebert201/Entropic-Threads.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Jakehebert201/Entropic-Threads/issues"
+  },
+  "homepage": "https://github.com/Jakehebert201/Entropic-Threads#readme",
+  "devDependencies": {
+    "@types/node": "^22.18.12",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.11"
+  },
+  "dependencies": {
+    "break_eternity.js": "^2.1.2"
+  }
+}
