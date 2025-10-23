@@ -1,7 +1,7 @@
 import Decimal from "break_eternity.js";
 import { newGeneratorState } from "./generators.js";
 import type { GeneratorState } from "./generators.js";
-import { save, load } from "./saving.js";
+import { save, load, deleteSaveData } from "./saving.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
@@ -48,4 +48,8 @@ export function saveState(s: GameState) {
     gens: s.gens.map(g => ({ units: g.units.toString(), bought: g.bought })),
     lastTick: s.lastTick,
   });
+}
+
+export function clearState() {
+  deleteSaveData(KEY);
 }

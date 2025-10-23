@@ -3,6 +3,7 @@ declare module "break_eternity.js" {
     // Minimal surface we actually use. Add more methods as you need them.
     export default class Decimal {
       constructor(value?: number | string | Decimal);
+      static pow10(value: number): Decimal;
   
       add(n: number | string | Decimal): Decimal;
       sub(n: number | string | Decimal): Decimal;

@@ -1,8 +1,9 @@
 import Decimal from "break_eternity.js";
-import { loadState, saveState } from "./state.js";
-import { tick, buyOne, buyN, buyMax } from "./game.js";
+import { loadState, saveState, newState, clearState } from "./state.js";
+import { tick, buyMax, buyMaxAll } from "./game.js";
 import { GEN_CFG } from "./generators.js";
-import { nextCost, totalCostFor } from "./economy.js";
+import { nextCost } from "./economy.js";
+import { PER_PURCHASE_MULT } from "./constants.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
@@ -11,6 +12,8 @@ const D = (x:number | string| Dec) =>
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
 const gensContainer = document.getElementById("gens")!;
+const deleteSaveBtn = document.getElementById("delete-save") as HTMLButtonElement | null;
+const maxAllBtn = document.getElementById("max-all") as HTMLButtonElement | null;
 
 // Build generator rows dynamically
 type RowRefs = {
@@ -18,9 +21,8 @@ type RowRefs = {
   name: HTMLSpanElement;
   units: HTMLSpanElement;
   bought: HTMLSpanElement;
+  multiplier: HTMLSpanElement;
   nextCost: HTMLSpanElement;
-  buy1: HTMLButtonElement;
-  buy10: HTMLButtonElement;
   buyMax: HTMLButtonElement;
 };
 
@@ -31,40 +33,27 @@ function makeRow(tier: number): RowRefs {
   }
 
   const row = document.createElement("div");
-  row.style.display = "grid";
-  row.style.gridTemplateColumns = "140px 1fr 1fr 1fr auto auto auto";
-  row.style.gap = "8px";
-  row.style.alignItems = "center";
-  row.style.margin = "6px 0";
+  row.className = "gen-row";
 
   const name = document.createElement("span");
   name.textContent = cfg.name;
 
   const units = document.createElement("span");
   const bought = document.createElement("span");
+  const multiplier = document.createElement("span");
   const nextCost = document.createElement("span");
 
-  const buy1 = document.createElement("button");
-  buy1.textContent = "Buy 1";
-  const buy10 = document.createElement("button");
-  buy10.textContent = "Buy 10";
   const buyMaxBtn = document.createElement("button");
   buyMaxBtn.textContent = "Max";
 
-  row.append(name, units, bought, nextCost, buy1, buy10, buyMaxBtn);
+  const buttonGroup = document.createElement("div");
+  buttonGroup.className = "gen-row-buttons";
+  buttonGroup.append(buyMaxBtn);
+
+  row.append(name, units, bought, multiplier, nextCost, buttonGroup);
   gensContainer.appendChild(row);
 
   // Wire handlers
-  buy1.addEventListener("click", () => {
-    if (buyOne(state, tier)) {
-      render();
-    }
-  });
-  buy10.addEventListener("click", () => {
-    if (buyN(state, tier, 10)) {
-      render();
-    }
-  });
   buyMaxBtn.addEventListener("click", () => {
     const got: boolean = buyMax(state, tier); // returns success/failure
     if (got) {
@@ -72,12 +61,34 @@ function makeRow(tier: number): RowRefs {
     }
   });
 
-  return { row, name, units, bought, nextCost, buy1, buy10, buyMax: buyMaxBtn };
+  return { row, name, units, bought, multiplier, nextCost, buyMax: buyMaxBtn };
 }
 
 const state = loadState();
 const rows: RowRefs[] = [];
 for (let t = 0; t < GEN_CFG.length; t++) rows.push(makeRow(t));
+
+if (deleteSaveBtn) {
+  deleteSaveBtn.addEventListener("click", () => {
+    const shouldReset = typeof window !== "undefined" && typeof window.confirm === "function"
+      ? window.confirm("Delete all progress? This cannot be undone.")
+      : true;
+    if (!shouldReset) return;
+    clearState();
+    const fresh = newState();
+    state.strings = fresh.strings;
+    state.gens = fresh.gens;
+    state.lastTick = fresh.lastTick;
+    render();
+  });
+}
+if (maxAllBtn) {
+  maxAllBtn.addEventListener("click", () => {
+    if (buyMaxAll(state)) {
+      render();
+    }
+  });
+}
 
 // ---- formatting helpers ----
 function format(d: Dec): string {
@@ -102,14 +113,11 @@ function render() {
     if (!cfg || !r || !gen) continue;
     r.units.textContent = format(gen.units);
     r.bought.textContent = String(gen.bought);
+    r.multiplier.textContent = format(PER_PURCHASE_MULT.pow(gen.bought));
     r.nextCost.textContent = format(nextCost(cfg, gen.bought));
     // enable/disable buttons based on affordability
-    const canBuy1 = state.strings.greaterThanOrEqualTo(nextCost(cfg, gen.bought));
-    const canBuy10 = state.strings.greaterThanOrEqualTo(totalCostFor(cfg, gen.bought, 10));
-    const canBuyMax = canBuy1; // at least one
-    r.buy1.disabled = !canBuy1;
-    r.buy10.disabled = !canBuy10;
-    r.buyMax.disabled = !canBuyMax;
+    const canBuy = state.strings.greaterThanOrEqualTo(nextCost(cfg, gen.bought));
+    r.buyMax.disabled = !canBuy;
   }
 }
 

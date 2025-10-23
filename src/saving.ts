@@ -17,3 +17,10 @@ export function load<T>(key: string, fallback: T):T{
         return fallback;
     }
 }
+
+export function deleteSaveData<T>(key: string){
+    try{
+        if(typeof localStorage === "undefined")return;
+        localStorage.removeItem(KEY_PREFIX + key);
+    }catch(error){}
+}

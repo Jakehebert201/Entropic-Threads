@@ -61,7 +61,20 @@
       #gens {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
+      }
+      .gen-global-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 12px;
+      }
+      .gen-global-actions button {
+        padding: 0.5rem 1rem;
+      }
+      .app-footer {
+        margin-top: 36px;
+        display: flex;
+        justify-content: flex-end;
       }
       button {
         cursor: pointer;
@@ -78,6 +91,41 @@
       button:disabled {
         cursor: not-allowed;
         opacity: 0.5;
+      }
+      .gen-header,
+      .gen-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 1.3fr) repeat(4, minmax(120px, 1fr)) auto;
+        align-items: center;
+        gap: 12px;
+      }
+      .gen-header {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(0, 0, 0, 0.58);
+        padding-bottom: 4px;
+      }
+      .gen-row {
+        margin: 4px 0;
+      }
+      .gen-header span:not(:first-child),
+      .gen-row span:not(:first-child) {
+        justify-self: center;
+        text-align: center;
+      }
+      .gen-row-buttons {
+        display: flex;
+        gap: 6px;
+        justify-self: end;
+      }
+      #delete-save {
+        border-color: rgba(196, 30, 58, 0.5);
+        color: rgba(180, 25, 48, 0.92);
+      }
+      #delete-save:hover:not(:disabled) {
+        background: rgba(255, 230, 236, 0.9);
       }
       @media (prefers-color-scheme: dark) {
         body {
@@ -102,6 +150,16 @@
         button:hover:not(:disabled) {
           background: rgba(80, 80, 120, 0.8);
         }
+        .gen-header {
+          color: rgba(255, 255, 255, 0.7);
+        }
+        #delete-save {
+          border-color: rgba(230, 90, 110, 0.4);
+          color: rgba(255, 145, 165, 0.9);
+        }
+        #delete-save:hover:not(:disabled) {
+          background: rgba(95, 45, 60, 0.85);
+        }
       }
     </style>
   </head>
@@ -121,8 +179,22 @@
 
       <section>
         <h2>Generator Array</h2>
+        <div class="gen-global-actions">
+          <button id="max-all" type="button">Max All Generators</button>
+        </div>
+        <div class="gen-header">
+          <span>Generator</span>
+          <span>Units</span>
+          <span>Bought</span>
+          <span>Multiplier</span>
+          <span>Cost</span>
+          <span>Actions</span>
+        </div>
         <div id="gens"></div>
       </section>
+      <footer class="app-footer">
+        <button id="delete-save" type="button">Delete Save Data</button>
+      </footer>
     </div>
 
     <script type="module" src="/src/index.ts"></script>
