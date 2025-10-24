@@ -153,4 +153,28 @@ button:disabled {
   #delete-save:hover:not(:disabled) {
     background: rgba(95, 45, 60, 0.85);
   }
+  .tabs{
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+  }
+  .tab-btn{
+    all: unset;
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(70, 90, 140, 0.25);
+    background: rgba(255, 255, 255, 0.7);
+    transition: background 0.12s ease;
+  }
+  .tab-btn.active{
+    background: rgba(140, 16, 250, 0.3);
+    border-color: rgba(100, 120, 255, 0.5);
+  }
+  .tab-view{
+    display: none;
+  }
+  .tab-view.active{
+    display: block;
+  }
 }

@@ -4,6 +4,7 @@ import { tick, buyOne, buyMaxAll } from "./game.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT } from "./constants.js";
+import { timePlayed, aggregateStats, } from "./stats.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
@@ -90,6 +91,14 @@ if (maxAllBtn) {
   });
 }
 
+document.addEventListener("keydown", event => {
+  if (event.key === "m" || event.key === "M") {
+    if (buyMaxAll(state)) {
+      render();
+    }
+  }
+});
+
 // ---- formatting helpers ----
 function format(d: Dec): string {
   // small -> locale number; large -> scientific like 1.234e123
@@ -120,6 +129,88 @@ function render() {
     r.buy1.disabled = !canBuy;
   }
 }
+//tab switching
+const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
+const tabViews   = document.querySelectorAll<HTMLElement>(".tab-view");
+
+function activateTab(name: "game" | "stats") {
+  // highlight the active button
+  tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  // show the correct tab view
+  tabViews.forEach(v => v.classList.toggle("active", v.id === `tab-${name}`));
+
+  // only render stats when Stats tab is activated
+  if (name === "stats") {
+    queueMicrotask(() => renderStats());
+  }
+}
+
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const name = (btn.dataset.tab as "game" | "stats") ?? "game";
+    activateTab(name);
+  });
+});
+
+
+export function renderStats() {
+  const root = document.getElementById('stats-container');
+  if (!root) {
+    console.warn('renderStats: #stats-container not found');
+    return;
+  }
+
+  try {
+    // Safe stringify for Decimal/break_infinity values
+    const toStr = (v: any) =>
+      v == null ? '—'
+      : typeof v === 'string' ? v
+      : typeof v === 'number' ? v.toLocaleString()
+      : typeof v.toString === 'function' ? v.toString()
+      : String(v);
+
+    const { days, hours, minutes, seconds } = timePlayed(state);  // must not throw
+    const { totalUnits, totalBought, highestTier } = aggregateStats(state); // must not throw
+
+    const timeParts: string[] = [];
+    if (days) timeParts.push(`${days}d`);
+    if (hours || timeParts.length) timeParts.push(`${hours}h`);
+    if (minutes || timeParts.length) timeParts.push(`${minutes}m`);
+    timeParts.push(`${seconds}s`);
+    const timeString = timeParts.join(' ');
+
+    const rows: Array<[string, string]> = [
+      ['Time Played', timeString],
+      ['Strings Owned', toStr(format ? format(state.strings) : toStr(state.strings))],
+      ['Total Generator Units', toStr(totalUnits)],
+      ['Total Purchases', (typeof totalBought === 'number' ? totalBought.toLocaleString() : toStr(totalBought))],
+      ['Highest Active Tier', highestTier >= 0 ? `Gen${highestTier + 1}` : 'None'],
+    ];
+
+    // minimal skeleton in case CSS is missing
+    if (!document.getElementById('stats-row-css')) {
+      const style = document.createElement('style');
+      style.id = 'stats-row-css';
+      style.textContent = `
+        .stat-row { display:flex; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid rgba(120,140,200,.2); }
+        .stat-row:last-child { border-bottom: 0; }
+        .stat-label { opacity:.75; text-transform:uppercase; letter-spacing:.06em; font-size:.85rem; }
+        .stat-value { font-weight:600; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    root.innerHTML = rows
+      .map(([label, value]) =>
+        `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`
+      )
+      .join('');
+  } catch (err) {
+    console.error('renderStats failed:', err);
+    root.textContent = 'Failed to render stats (see console).';
+  }
+}
+
 
 // ---- main loop + autosave ----
 let lastSave = performance.now();

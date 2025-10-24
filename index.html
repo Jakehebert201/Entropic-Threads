@@ -11,19 +11,24 @@
       <header>
         <h1>Entropic Threads</h1>
         <p class="tagline">Weave braids of generators to spin strings into infinity.</p>
+      
+      <nav class="tabs">
+        <button data-tab="game" class="tab-btn active">Game</button>
+        <button data-tab="stats" class="tab-btn">Stats</button>
+        <button data-tab="settings" class="tab-btn">Settings</button>
+      </nav>
       </header>
-
-      <section class="stats">
-        <div class="stat">
-          <span>Strings</span>
-          <span id="strings" class="stat-value">0</span>
+<!-- Game tab content -->
+      <section id="tab-game" class="tab-view active">
+        <div class="stats">
+          <div class="stat">
+            <span>Strings</span>
+            <span id="strings" class="stat-value">0</span>
+          </div>
         </div>
-      </section>
-
-      <section>
         <h2>Generator Array</h2>
         <div class="gen-global-actions">
-          <button id="max-all" type="button">Max All Generators</button>
+          <button id="max-all" type="button">Max All Generators (M)</button>
         </div>
         <div class="gen-header">
           <span>Generator</span>
@@ -35,6 +40,17 @@
         </div>
         <div id="gens"></div>
       </section>
+<!-- Stats tab content -->
+      <section id="tab-stats" class="tab-view">
+        <h2> Player Stats</h2>
+        <div id="stats-container"></div>
+      </section>
+<!-- Settings tab content -->
+      <section id="tab-settings" class="tab-view">
+        <h2> Settings</h2>
+        <div id="settings-container"></div>
+      </section>
+<!-- Footer -->
       <footer class="app-footer">
         <button id="delete-save" type="button">Delete Save Data</button>
       </footer>
