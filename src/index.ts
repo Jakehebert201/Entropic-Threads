@@ -90,7 +90,7 @@ if (maxAllBtn) {
     }
   });
 }
-
+//#region keybindings;
 document.addEventListener("keydown", event => {
   if (event.key === "m" || event.key === "M") {
     if (buyMaxAll(state)) {
@@ -99,6 +99,8 @@ document.addEventListener("keydown", event => {
   }
 });
 
+
+//#endregion;
 // ---- formatting helpers ----
 function format(d: Dec): string {
   // small -> locale number; large -> scientific like 1.234e123
