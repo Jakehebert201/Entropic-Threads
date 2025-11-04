@@ -6,6 +6,8 @@ import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT } from "./constants.js";
 import { timePlayed, aggregateStats, } from "./stats.js";
 
+import { getBuildInfo } from "./build-info.js";
+
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
     x instanceof Decimal ? x : new Decimal(x);
@@ -15,6 +17,92 @@ const stringsEl = document.getElementById("strings")!;
 const gensContainer = document.getElementById("gens")!;
 const deleteSaveBtn = document.getElementById("delete-save") as HTMLButtonElement | null;
 const maxAllBtn = document.getElementById("max-all") as HTMLButtonElement | null;
+
+const buildInfoFooter = document.createElement("div");
+buildInfoFooter.id = "build-info-footer";
+buildInfoFooter.className = "build-info-footer";
+const existingFooter = document.querySelector('.app-footer');
+if (existingFooter) {
+  existingFooter.appendChild(buildInfoFooter);
+} else {
+  document.body.appendChild(buildInfoFooter);
+}
+
+const devRibbon = document.createElement('div');
+devRibbon.className = 'dev-build-ribbon';
+devRibbon.textContent = 'DEV BUILD';
+devRibbon.style.display = 'none';
+document.body.appendChild(devRibbon);
+
+const buildInfoStyle = document.createElement('style');
+buildInfoStyle.textContent = `
+  .build-info-footer {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+    padding: 0.5rem 1rem;
+  }
+  .build-info-footer span {
+    white-space: nowrap;
+  }
+  .dev-build-ribbon {
+    position: fixed;
+    top: 1rem;
+    right: -3.5rem;
+    transform: rotate(45deg);
+    background: rgba(255, 193, 7, 0.9);
+    color: #000;
+    padding: 0.25rem 2.5rem;
+    font-weight: 700;
+    font-size: 0.75rem;
+    z-index: 9999;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+`;
+if (!document.getElementById('build-info-style')) {
+  buildInfoStyle.id = 'build-info-style';
+  document.head.appendChild(buildInfoStyle);
+}
+
+function applyBuildInfo() {
+  getBuildInfo().then(info => {
+    if (!info) {
+      buildInfoFooter.textContent = 'Build info unavailable';
+      return;
+    }
+    buildInfoFooter.innerHTML = '';
+    const parts = [
+      ['Version', info.version],
+      ['Commit', info.commit],
+      ['Built', new Date(info.buildTime).toLocaleString()],
+    ];
+    parts.forEach(([_label, value], idx) => {
+      const span = document.createElement('span');
+      span.textContent = value;
+      buildInfoFooter.appendChild(span);
+      if (idx < parts.length - 1) {
+        const dot = document.createElement('span');
+        dot.textContent = '•';
+        buildInfoFooter.appendChild(dot);
+      }
+    });
+    if (info.env && info.env !== 'production') {
+      devRibbon.style.display = 'block';
+    } else {
+      devRibbon.style.display = 'none';
+    }
+  }).catch(() => {
+    buildInfoFooter.textContent = 'Build info unavailable';
+  });
+}
+
+applyBuildInfo();
+setInterval(applyBuildInfo, 60_000);
 
 // Build generator rows dynamically
 type RowRefs = {
@@ -104,7 +192,10 @@ document.addEventListener("keydown", event => {
 // ---- formatting helpers ----
 function format(d: Dec): string {
   // small -> locale number; large -> scientific like 1.234e123
-  if (d.lessThan(1e6)) return (Math.round(d.toNumber() * 10) / 10).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+  if (d.lessThan(1e6)) {
+    const num = d.toNumber();
+    return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   // @ts-ignore (mantissa/exponent exist at runtime in break_eternity)
   if (typeof d.mantissa === "number" && typeof d.exponent === "number") {
     // @ts-ignore
