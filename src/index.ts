@@ -1,5 +1,5 @@
 import Decimal from "break_eternity.js";
-import { loadState, saveState, newState, clearState, serializeGameState, deserializeGameState, type GameState, type SerializedGameState } from "./state.js";
+import { loadState, saveState, newState, serializeGameState, deserializeGameState, type GameState, type SerializedGameState } from "./state.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT } from "./constants.js";
@@ -9,10 +9,29 @@ import { getBuildInfo } from "./build-info.js";
 import type { BuildInfo } from "./build-info.js";
 import { ensureThemeStyles, readStoredTheme, applyThemeChoice, THEME_OPTIONS } from "./theme.js";
 import type { ThemeChoice } from "./theme.js";
+import {
+  getActiveSlot,
+  listSlots,
+  switchActiveSlot,
+  createSlot as createSaveSlot,
+  deleteSlot as deleteSaveSlot,
+  renameSlot as renameSaveSlot,
+  exportSlot,
+  importIntoActiveSlot,
+  getAutosaveInterval,
+  setAutosaveInterval,
+  resetActiveSlot as overwriteActiveSlot,
+  MIN_AUTOSAVE_INTERVAL_MS,
+  MAX_AUTOSAVE_INTERVAL_MS,
+  type SaveSlotSummary,
+  type LoadedSlot,
+} from "./saving.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
     x instanceof Decimal ? x : new Decimal(x);
+
+const freshSerializedState = (): SerializedGameState => serializeGameState(newState());
 
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
@@ -337,10 +356,189 @@ function setupSettingsUI() {
   function renderSavingTab(panel: HTMLDivElement) {
     panel.classList.add('settings-panel-saving');
 
+    const status = document.createElement('div');
+    status.className = 'settings-status';
+
+    let statusTimeout: number | undefined;
+    function showStatus(message: string, tone: 'info' | 'error' = 'info') {
+      status.textContent = message;
+      if (tone === 'error') {
+        status.dataset.tone = 'error';
+      } else {
+        status.removeAttribute('data-tone');
+      }
+      if (statusTimeout) window.clearTimeout(statusTimeout);
+      statusTimeout = window.setTimeout(() => {
+        status.textContent = '';
+        status.removeAttribute('data-tone');
+      }, 5000);
+    }
+
     const intro = document.createElement('p');
     intro.className = 'settings-note';
-    intro.textContent = 'Autosaves run every 10 seconds. Use these controls for manual management or emergency backup.';
     panel.appendChild(intro);
+
+    const autosaveSeconds = () => Math.round(autosaveIntervalMs / 1000);
+    function updateAutosaveNote() {
+      intro.textContent = `Autosaves run every ${autosaveSeconds()}s. Adjust the interval or manage additional slots below.`;
+    }
+    updateAutosaveNote();
+
+    const slotField = document.createElement('div');
+    slotField.className = 'settings-field';
+
+    const slotLabel = document.createElement('label');
+    slotLabel.htmlFor = 'settings-slot-select';
+    slotLabel.textContent = 'Active save slot';
+
+    const slotSelect = document.createElement('select');
+    slotSelect.id = 'settings-slot-select';
+
+    const slotButtons = document.createElement('div');
+    slotButtons.className = 'settings-button-row';
+
+    const newSlotBtn = document.createElement('button');
+    newSlotBtn.type = 'button';
+    newSlotBtn.className = 'settings-btn';
+    newSlotBtn.textContent = 'New Slot';
+
+    const renameSlotBtn = document.createElement('button');
+    renameSlotBtn.type = 'button';
+    renameSlotBtn.className = 'settings-btn';
+    renameSlotBtn.textContent = 'Rename';
+
+    const deleteSlotBtn = document.createElement('button');
+    deleteSlotBtn.type = 'button';
+    deleteSlotBtn.className = 'settings-btn danger';
+    deleteSlotBtn.textContent = 'Delete Slot';
+
+    slotButtons.append(newSlotBtn, renameSlotBtn, deleteSlotBtn);
+    slotField.append(slotLabel, slotSelect, slotButtons);
+    panel.appendChild(slotField);
+
+    function refreshSlotControls(selectedId?: string) {
+      const slots = listSlots();
+      const targetId = selectedId ?? activeSlot?.id ?? slots[0]?.id ?? '';
+      slotSelect.innerHTML = '';
+      slots.forEach(slot => {
+        const option = document.createElement('option');
+        option.value = slot.id;
+        option.textContent = slot.name;
+        slotSelect.appendChild(option);
+      });
+      if (targetId) {
+        slotSelect.value = targetId;
+      }
+      slotSelect.disabled = slots.length === 0;
+      renameSlotBtn.disabled = slots.length === 0;
+      deleteSlotBtn.disabled = slots.length <= 1;
+      const titleName = activeSlot?.name ?? '—';
+      slotLabel.textContent = titleName === '—'
+        ? 'Active save slot'
+        : `Active save slot — ${titleName}`;
+    }
+
+    function applyLoadedSlot(loaded: LoadedSlot, message?: string) {
+      const nextState = deserializeGameState(loaded.data);
+      state = nextState;
+      resetStringRateTracking(state.strings);
+      render();
+      const serialized = serializeGameState(state);
+      simWorker.postMessage({ type: 'replaceState', state: serialized });
+      lastSaveTimestamp = performance.now();
+      activeSlot = getActiveSlot();
+      refreshSlotControls(activeSlot?.id);
+      if (message) {
+        showStatus(message);
+      }
+    }
+
+    slotSelect.addEventListener('change', () => {
+      const selectedId = slotSelect.value;
+      if (!selectedId || selectedId === activeSlot?.id) return;
+      const loaded = switchActiveSlot(selectedId, freshSerializedState());
+      if (!loaded) {
+        showStatus('Failed to switch slots.', 'error');
+        refreshSlotControls();
+        return;
+      }
+      applyLoadedSlot(loaded, `Switched to ${loaded.slot.name}.`);
+    });
+
+    newSlotBtn.addEventListener('click', () => {
+      const defaultName = `Slot ${listSlots().length + 1}`;
+      const proposed = typeof window !== 'undefined' && typeof window.prompt === 'function'
+        ? window.prompt('Name for the new slot?', defaultName)
+        : defaultName;
+      const picked = (proposed ?? defaultName).trim();
+      const loaded = createSaveSlot(picked.length > 0 ? picked : defaultName, freshSerializedState());
+      applyLoadedSlot(loaded, `Created ${loaded.slot.name}.`);
+    });
+
+    renameSlotBtn.addEventListener('click', () => {
+      if (!activeSlot) return;
+      const proposed = typeof window !== 'undefined' && typeof window.prompt === 'function'
+        ? window.prompt('Rename slot', activeSlot.name)
+        : activeSlot.name;
+      if (proposed == null) return;
+      const trimmed = proposed.trim();
+      if (!trimmed) {
+        showStatus('Slot name cannot be empty.', 'error');
+        return;
+      }
+      const updated = renameSaveSlot(activeSlot.id, trimmed);
+      if (!updated) {
+        showStatus('Rename failed.', 'error');
+        return;
+      }
+      activeSlot = updated;
+      refreshSlotControls(updated.id);
+      showStatus(`Renamed slot to ${updated.name}.`);
+    });
+
+    deleteSlotBtn.addEventListener('click', () => {
+      if (!activeSlot) return;
+      const allowed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(`Delete ${activeSlot.name}? This cannot be undone.`)
+        : true;
+      if (!allowed) return;
+      const loaded = deleteSaveSlot(activeSlot.id, freshSerializedState());
+      applyLoadedSlot(loaded, `Deleted slot. Now using ${loaded.slot.name}.`);
+    });
+
+    const autosaveField = document.createElement('div');
+    autosaveField.className = 'settings-field';
+
+    const autosaveLabel = document.createElement('label');
+    autosaveLabel.htmlFor = 'settings-autosave-input';
+    autosaveLabel.textContent = 'Autosave interval (seconds)';
+
+    const autosaveInput = document.createElement('input');
+    autosaveInput.type = 'number';
+    autosaveInput.id = 'settings-autosave-input';
+    autosaveInput.min = String(Math.round(MIN_AUTOSAVE_INTERVAL_MS / 1000));
+    autosaveInput.max = String(Math.round(MAX_AUTOSAVE_INTERVAL_MS / 1000));
+    autosaveInput.step = '1';
+    autosaveInput.value = String(autosaveSeconds());
+    autosaveInput.title = `Between ${Math.round(MIN_AUTOSAVE_INTERVAL_MS / 1000)} and ${Math.round(MAX_AUTOSAVE_INTERVAL_MS / 1000)} seconds`;
+
+    autosaveInput.addEventListener('change', () => {
+      const seconds = Number(autosaveInput.value);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        showStatus('Enter a valid number of seconds.', 'error');
+        autosaveInput.value = String(autosaveSeconds());
+        return;
+      }
+      const updated = setAutosaveInterval(seconds * 1000);
+      autosaveIntervalMs = updated;
+      autosaveInput.value = String(Math.round(updated / 1000));
+      updateAutosaveNote();
+      lastSaveTimestamp = performance.now();
+      showStatus(`Autosave interval set to ${Math.round(updated / 1000)}s.`);
+    });
+
+    autosaveField.append(autosaveLabel, autosaveInput);
+    panel.appendChild(autosaveField);
 
     const buttonRow = document.createElement('div');
     buttonRow.className = 'settings-button-row';
@@ -352,7 +550,9 @@ function setupSettingsUI() {
     manualSaveBtn.addEventListener('click', () => {
       saveState(state);
       lastSaveTimestamp = performance.now();
-      showStatus(`Saved at ${new Date().toLocaleTimeString()}`);
+      activeSlot = getActiveSlot();
+      refreshSlotControls(activeSlot?.id);
+      showStatus(`Saved ${activeSlot?.name ?? 'slot'} at ${new Date().toLocaleTimeString()}.`);
     });
 
     const exportBtn = document.createElement('button');
@@ -361,9 +561,14 @@ function setupSettingsUI() {
     exportBtn.textContent = 'Copy Save to Clipboard';
     exportBtn.addEventListener('click', async () => {
       try {
-        const payload = JSON.stringify(serializeGameState(state), null, 2);
+        const payload = exportSlot(activeSlot?.id);
+        if (!payload) {
+          showStatus('No save data available to export.', 'error');
+          return;
+        }
+        const text = JSON.stringify(payload, null, 2);
         if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(payload);
+          await navigator.clipboard.writeText(text);
           showStatus('Copied save data to clipboard.');
         } else {
           showStatus('Clipboard API unavailable in this browser.', 'error');
@@ -378,26 +583,21 @@ function setupSettingsUI() {
       exportBtn.title = 'Clipboard API unavailable in this environment';
     }
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'settings-btn danger';
-    deleteBtn.textContent = 'Delete Save Data';
-    deleteBtn.addEventListener('click', () => {
-      const shouldReset = typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm('Delete all progress? This cannot be undone.')
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'settings-btn danger';
+    resetBtn.textContent = 'Reset Slot';
+    resetBtn.addEventListener('click', () => {
+      if (!activeSlot) return;
+      const allowed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(`Reset ${activeSlot.name}? This cannot be undone.`)
         : true;
-      if (!shouldReset) return;
-      clearState();
-      state = newState();
-      resetStringRateTracking(state.strings);
-      saveState(state);
-      lastSaveTimestamp = performance.now();
-      render();
-      simWorker.postMessage({ type: 'replaceState', state: serializeGameState(state) });
-      showStatus('Save data cleared. A new run has started.');
+      if (!allowed) return;
+      const loaded = overwriteActiveSlot(freshSerializedState(), activeSlot.name);
+      applyLoadedSlot(loaded, `Reset ${loaded.slot.name}.`);
     });
 
-    buttonRow.append(manualSaveBtn, exportBtn, deleteBtn);
+    buttonRow.append(manualSaveBtn, exportBtn, resetBtn);
     panel.appendChild(buttonRow);
 
     const importField = document.createElement('div');
@@ -426,16 +626,13 @@ function setupSettingsUI() {
         return;
       }
       try {
-        const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') throw new Error('Invalid payload');
-        state = deserializeGameState(parsed as Partial<SerializedGameState>);
-        resetStringRateTracking(state.strings);
-        saveState(state);
-        lastSaveTimestamp = performance.now();
-        render();
-        simWorker.postMessage({ type: 'replaceState', state: serializeGameState(state) });
+        const loaded = importIntoActiveSlot(raw, freshSerializedState());
+        if (!loaded) {
+          showStatus('Import failed. Please verify the JSON payload.', 'error');
+          return;
+        }
         importArea.value = '';
-        showStatus('Save data imported successfully.');
+        applyLoadedSlot(loaded, `Imported data into ${loaded.slot.name}.`);
       } catch (err) {
         console.error('Import failed:', err);
         showStatus('Import failed. Please verify the JSON payload.', 'error');
@@ -446,29 +643,14 @@ function setupSettingsUI() {
     importField.append(importLabel, importArea, importActions);
     panel.appendChild(importField);
 
-    const status = document.createElement('div');
-    status.className = 'settings-status';
     panel.appendChild(status);
-
-    let statusTimeout: number | undefined;
-    function showStatus(message: string, tone: 'info' | 'error' = 'info') {
-      status.textContent = message;
-      if (tone === 'error') {
-        status.dataset.tone = 'error';
-      } else {
-        status.removeAttribute('data-tone');
-      }
-      if (statusTimeout) window.clearTimeout(statusTimeout);
-      statusTimeout = window.setTimeout(() => {
-        status.textContent = '';
-        status.removeAttribute('data-tone');
-      }, 5000);
-    }
 
     const hint = document.createElement('p');
     hint.className = 'settings-note';
-    hint.textContent = 'Tip: manual saves are also written automatically shortly before you close or reload the tab.';
+    hint.textContent = 'Tip: manual saves and imports apply to the selected slot. Autosaves also run shortly before closing the tab.';
     panel.appendChild(hint);
+
+    refreshSlotControls(activeSlot?.id);
   }
 
   function renderAppearanceTab(panel: HTMLDivElement) {
@@ -615,6 +797,8 @@ function makeRow(tier: number): RowRefs {
 }
 
 let state: GameState = loadState();
+let activeSlot: SaveSlotSummary | null = getActiveSlot();
+let autosaveIntervalMs = getAutosaveInterval();
 resetStringRateTracking(state.strings);
 const rows: RowRefs[] = [];
 
@@ -786,9 +970,10 @@ simWorker.addEventListener("message", event => {
       updateStringRateFromSnapshot(nextState, now);
       state = nextState;
       render();
-      if (now - lastSaveTimestamp > 10_000) {
+      if (now - lastSaveTimestamp > autosaveIntervalMs) {
         saveState(state);
         lastSaveTimestamp = now;
+        activeSlot = getActiveSlot();
       }
       break;
     }

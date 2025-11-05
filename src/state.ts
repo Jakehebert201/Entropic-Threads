@@ -1,7 +1,7 @@
 import Decimal from "break_eternity.js";
 import { newGeneratorState } from "./generators.js";
 import type { GeneratorState } from "./generators.js";
-import { save, load, deleteSaveData } from "./saving.js";
+import { ensureActiveSlot, saveActiveSlot, resetActiveSlot } from "./saving.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
@@ -60,8 +60,6 @@ export type GameState = {
   created: number;
 };
 
-const KEY = "state";
-
 export function newState(): GameState {
   return {
     strings: new Decimal(2),
@@ -72,20 +70,15 @@ export function newState(): GameState {
 }
 //loading will break time created, how do I fix this?
 export function loadState(): GameState {
-  const fallback: SerializedGameState = {
-    strings: "2",
-    gens: [],
-    lastTick: Date.now(),
-    created: Date.now(),
-  };
-  const raw = load<Partial<SerializedGameState>>(KEY, fallback);
-  return deserializeGameState(raw ?? fallback);
+  const fallback = serializeGameState(newState());
+  const { data } = ensureActiveSlot(fallback);
+  return deserializeGameState(data ?? fallback);
 }
 
 export function saveState(s: GameState) {
-  save(KEY, serializeGameState(s));
+  saveActiveSlot(serializeGameState(s));
 }
 
 export function clearState() {
-  deleteSaveData(KEY);
+  resetActiveSlot(serializeGameState(newState()));
 }
