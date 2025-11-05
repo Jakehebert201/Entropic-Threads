@@ -15,6 +15,13 @@ type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
     x instanceof Decimal ? x : new Decimal(x);
 
+const STEP_SECONDS = 0.05; // 50 ms fixed simulation step
+const MAX_STEPS_PER_FRAME = 40;
+const OFFLINE_CAP_SECONDS = 60 * 60;
+const DRIFT_WARN_RATIO = 1.5;
+const DRIFT_RESET_RATIO = 1.2;
+const DRIFT_LOG_INTERVAL_MS = 2000;
+
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
 const gensContainer = document.getElementById("gens")!;
@@ -597,7 +604,18 @@ function makeRow(tier: number): RowRefs {
 }
 
 const state = loadState();
+
+let accumulator = 0;
+let lastFrameTime = performance.now();
+let loopStartWall = lastFrameTime;
+let totalSimulatedSeconds = 0;
+let warnedAboutDrift = false;
+let lastDriftLog = lastFrameTime;
+
 const rows: RowRefs[] = [];
+
+applyOfflineProgress();
+
 for (let t = 0; t < GEN_CFG.length; t++) rows.push(makeRow(t));
 
 setupSettingsUI();
@@ -746,15 +764,102 @@ export function renderStats() {
 }
 
 
+function applyOfflineProgress() {
+  const now = Date.now();
+  const elapsedSeconds = Math.max(0, (now - state.lastTick) / 1000);
+
+  if (elapsedSeconds <= 0) {
+    state.lastTick = now;
+    const wall = performance.now();
+    accumulator = 0;
+    totalSimulatedSeconds = 0;
+    lastFrameTime = wall;
+    loopStartWall = wall;
+    lastDriftLog = wall;
+    warnedAboutDrift = false;
+    return;
+  }
+
+  const cappedSeconds = Math.min(elapsedSeconds, OFFLINE_CAP_SECONDS);
+  if (elapsedSeconds > OFFLINE_CAP_SECONDS) {
+    console.warn(`Offline progress capped to ${(OFFLINE_CAP_SECONDS / 3600).toFixed(1)} hour(s).`);
+  }
+
+  let remaining = cappedSeconds;
+  let simulated = 0;
+  let steps = 0;
+  while (remaining >= STEP_SECONDS) {
+    tick(state, STEP_SECONDS);
+    remaining -= STEP_SECONDS;
+    simulated += STEP_SECONDS;
+    steps += 1;
+  }
+  if (remaining > 1e-6) {
+    tick(state, remaining);
+    simulated += remaining;
+    steps += 1;
+  }
+
+  if (simulated > 0) {
+    console.info(`Applied ${simulated.toFixed(2)}s of offline progress in ${steps} step(s).`);
+  }
+
+  state.lastTick = now;
+  accumulator = 0;
+  totalSimulatedSeconds = 0;
+  const wall = performance.now();
+  lastFrameTime = wall;
+  loopStartWall = wall;
+  lastDriftLog = wall;
+  warnedAboutDrift = false;
+}
+
 // ---- main loop + autosave ----
 let lastSave = performance.now();
 function loop(ts: number) {
-  tick(state);
+  const deltaSeconds = Math.max(0, (ts - lastFrameTime) / 1000);
+  lastFrameTime = ts;
+
+  accumulator = Math.min(accumulator + deltaSeconds, OFFLINE_CAP_SECONDS);
+
+  let steps = 0;
+  while (accumulator >= STEP_SECONDS && steps < MAX_STEPS_PER_FRAME) {
+    tick(state, STEP_SECONDS);
+    accumulator -= STEP_SECONDS;
+    totalSimulatedSeconds += STEP_SECONDS;
+    steps += 1;
+  }
+
+  if (steps === MAX_STEPS_PER_FRAME && accumulator >= STEP_SECONDS) {
+    if (ts - lastDriftLog >= DRIFT_LOG_INTERVAL_MS) {
+      console.warn('Simulation backlog exceeded per-frame budget; trimming remainder.');
+      lastDriftLog = ts;
+    }
+    accumulator = STEP_SECONDS;
+  }
+
+  state.lastTick = Date.now();
   render();
+
   if (ts - lastSave > 10_000) {
     saveState(state);
     lastSave = ts;
   }
+
+  const wallSeconds = (ts - loopStartWall) / 1000;
+  if (wallSeconds > 0) {
+    const ratio = totalSimulatedSeconds / wallSeconds;
+    if (ratio > DRIFT_WARN_RATIO) {
+      if (!warnedAboutDrift || ts - lastDriftLog >= DRIFT_LOG_INTERVAL_MS) {
+        console.warn(`Simulation running ${ratio.toFixed(2)}× faster than wall clock; dropping backlog.`);
+        lastDriftLog = ts;
+      }
+      warnedAboutDrift = true;
+    } else if (ratio < DRIFT_RESET_RATIO) {
+      warnedAboutDrift = false;
+    }
+  }
+
   requestAnimationFrame(loop);
 }
 

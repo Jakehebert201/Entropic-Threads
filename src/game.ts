@@ -6,9 +6,9 @@ import { SUPER_START, SUPER_STEP, costMultForTier, PER_PURCHASE_MULT } from "./c
 import type { GameState } from "./state.js";
 import { saveState } from "./state.js";
 
-export function tick(s: GameState, now = Date.now()) {
-  const dt = Math.min((now - s.lastTick) / 1000, 0.5); // cap dt to avoid huge spikes
-  if (dt <= 0) { s.lastTick = now; return; }
+export function tick(s: GameState, dtSeconds: number) {
+  const dt = Math.min(Math.max(dtSeconds, 0), 0.5); // clamp dt to avoid huge spikes or negatives
+  if (dt <= 0) return;
 
   // Cascade: high → low, with per-purchase power applied to the producing tier.
   for (let i = GEN_CFG.length - 1; i >= 1; i--) {
@@ -33,7 +33,6 @@ export function tick(s: GameState, now = Date.now()) {
     s.strings = s.strings.add(baseStrings.mul(braidMultiplier(s)));
   }
 
-  s.lastTick = now;
 }
 
 export function buyOne(s: GameState, tier: number): boolean {
