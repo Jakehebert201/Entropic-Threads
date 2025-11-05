@@ -27,12 +27,6 @@ const braidMultiplier = BRAID_BASE.pow(Math.pow(strands, 0.7));
 ```
 
 With the current tuning (`BRAID_BASE = 2`, `BRAID_SIZE = 25`), each bundle of 25 purchases contributes roughly `2^(strands^0.7)` to string production.
-
-### Known Issues
-- Splicing layer unlock placeholder appears around `~e125` strings but is not yet interactive.
-- Fiber reset target (`2^1024` strings ≈ `1.8e308`) is exposed in UI copy before the feature lands.
-- Autosave interval respects local storage limits; clearing storage externally may drop slot metadata until the next manual save.
-
 ### ROADMAP
  **Layer Outline**
 
