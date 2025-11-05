@@ -1,9 +1,9 @@
 {
   "name": "Entropic-Threads",
-  "version": "v0.1-stable",
-  "commit": "e143a76",
+  "version": "v0.2-stable",
+  "commit": "19b3474",
   "branch": "main",
   "dirty": true,
-  "buildTime": "2025-11-04T23:42:09.878Z",
+  "buildTime": "2025-11-04T23:54:30.430Z",
   "env": "development"
 }

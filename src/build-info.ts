@@ -15,7 +15,9 @@ export async function getBuildInfo(): Promise<BuildInfo | null> {
     return cached ?? null;
   }
   try {
-    const res = await fetch('/version.json', { cache: 'no-store' });
+    const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+    const url = base ? `${base}/version.json` : '/version.json';
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) {
       cached = null;
       return null;

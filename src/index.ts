@@ -7,6 +7,7 @@ import { PER_PURCHASE_MULT } from "./constants.js";
 import { timePlayed, aggregateStats, } from "./stats.js";
 
 import { getBuildInfo } from "./build-info.js";
+import type { BuildInfo } from "./build-info.js";
 
 type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
@@ -15,7 +16,7 @@ const D = (x:number | string| Dec) =>
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
 const gensContainer = document.getElementById("gens")!;
-const deleteSaveBtn = document.getElementById("delete-save") as HTMLButtonElement | null;
+const settingsContainer = document.getElementById("settings-container") as HTMLDivElement | null;
 const maxAllBtn = document.getElementById("max-all") as HTMLButtonElement | null;
 
 const buildInfoFooter = document.createElement("div");
@@ -69,40 +70,618 @@ if (!document.getElementById('build-info-style')) {
   document.head.appendChild(buildInfoStyle);
 }
 
-function applyBuildInfo() {
-  getBuildInfo().then(info => {
-    if (!info) {
-      buildInfoFooter.textContent = 'Build info unavailable';
-      return;
-    }
-    buildInfoFooter.innerHTML = '';
-    const parts = [
-      ['Version', info.version],
-      ['Commit', info.commit],
-      ['Built', new Date(info.buildTime).toLocaleString()],
-    ];
-    parts.forEach(([_label, value], idx) => {
-      const span = document.createElement('span');
-      span.textContent = value;
-      buildInfoFooter.appendChild(span);
-      if (idx < parts.length - 1) {
-        const dot = document.createElement('span');
-        dot.textContent = '•';
-        buildInfoFooter.appendChild(dot);
-      }
-    });
-    if (info.env && info.env !== 'production') {
-      devRibbon.style.display = 'block';
-    } else {
-      devRibbon.style.display = 'none';
-    }
-  }).catch(() => {
-    buildInfoFooter.textContent = 'Build info unavailable';
-  });
+const themeStyle = document.createElement('style');
+themeStyle.id = 'theme-style';
+themeStyle.textContent = `
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  :root[data-theme="dark"] body {
+    background: radial-gradient(circle at top, rgba(26, 29, 43, 0.85), rgba(17, 20, 30, 0.95)) fixed;
+    background-repeat: no-repeat;
+    background-size: 160% 160%;
+    color: #e2e8f0;
+  }
+  :root[data-theme="dark"] .stats {
+    background: rgba(28, 30, 44, 0.7);
+    box-shadow: 0 18px 48px rgba(5, 8, 20, 0.55);
+  }
+  :root[data-theme="dark"] .stat {
+    color: rgba(226, 232, 240, 0.7);
+  }
+  :root[data-theme="dark"] .stat-value {
+    color: #f8fafc;
+  }
+  :root[data-theme="dark"] .gen-header {
+    color: rgba(226, 232, 240, 0.7);
+  }
+  :root[data-theme="dark"] button {
+    background: rgba(36, 40, 58, 0.85);
+    border-color: rgba(148, 163, 184, 0.3);
+    color: #e2e8f0;
+  }
+  :root[data-theme="dark"] button:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.3);
+  }
+  :root[data-theme="dark"] .settings-btn.danger {
+    background: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.4);
+  }
+  :root[data-theme="dark"] .settings-btn.danger:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.25);
+  }
+  :root[data-theme="dark"] .tab-btn {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: rgba(30, 34, 52, 0.9);
+    color: inherit;
+  }
+  :root[data-theme="dark"] .tab-btn.active {
+    background: rgba(99, 102, 241, 0.4);
+    border-color: rgba(99, 102, 241, 0.6);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+  :root[data-theme="light"] body {
+    background: radial-gradient(circle at top, rgba(255, 255, 255, 0.95), rgba(226, 232, 240, 0.9)) fixed;
+    background-repeat: no-repeat;
+    background-size: 160% 160%;
+    color: #0f172a;
+  }
+  :root[data-theme="light"] .stats {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  }
+  :root[data-theme="light"] .stat {
+    color: rgba(51, 65, 85, 0.7);
+  }
+  :root[data-theme="light"] .stat-value {
+    color: #0f172a;
+  }
+  :root[data-theme="light"] .gen-header {
+    color: rgba(51, 65, 85, 0.9);
+  }
+  :root[data-theme="light"] button {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: rgba(148, 163, 184, 0.35);
+    color: #0f172a;
+  }
+  :root[data-theme="light"] button:hover:not(:disabled) {
+    background: rgba(148, 197, 255, 0.25);
+  }
+  :root[data-theme="light"] .settings-btn.danger {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #991b1b;
+  }
+  :root[data-theme="light"] .settings-btn.danger:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.2);
+  }
+  :root[data-theme="light"] .tab-btn {
+    border-color: rgba(99, 102, 241, 0.25);
+    background: rgba(244, 244, 255, 0.9);
+    color: inherit;
+  }
+  :root[data-theme="light"] .tab-btn.active {
+    background: rgba(129, 140, 248, 0.3);
+    border-color: rgba(99, 102, 241, 0.5);
+  }
+`;
+if (!document.getElementById('theme-style')) {
+  document.head.appendChild(themeStyle);
 }
+
+const settingsStyle = document.createElement('style');
+settingsStyle.id = 'settings-style';
+settingsStyle.textContent = `
+  .settings-subtabs {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .settings-subtab-btn {
+    border: 1px solid rgba(100, 116, 139, 0.4);
+    border-radius: 9999px;
+    padding: 0.35rem 1.1rem;
+    background: rgba(148, 163, 184, 0.1);
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .settings-subtab-btn.active {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.6);
+    color: inherit;
+  }
+  .settings-panels {
+    display: block;
+  }
+  .settings-panel {
+    display: none;
+    gap: 0.75rem;
+    flex-direction: column;
+  }
+  .settings-panel.active {
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .settings-btn {
+    border-radius: 0.4rem;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: rgba(148, 163, 184, 0.15);
+    padding: 0.45rem 1.1rem;
+    cursor: pointer;
+  }
+  .settings-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+  }
+  .settings-btn.danger {
+    border-color: rgba(248, 113, 113, 0.6);
+    background: rgba(248, 113, 113, 0.15);
+  }
+  .settings-btn.danger:hover {
+    background: rgba(248, 113, 113, 0.3);
+  }
+  .settings-status {
+    font-size: 0.8rem;
+    opacity: 0.8;
+  }
+  .settings-status[data-tone="error"] {
+    color: #dc2626;
+    opacity: 1;
+  }
+  .settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-width: 360px;
+  }
+  .settings-note {
+    font-size: 0.85rem;
+    opacity: 0.75;
+  }
+`;
+if (!document.getElementById('settings-style')) {
+  document.head.appendChild(settingsStyle);
+}
+
+type ThemeChoice = "default" | "light" | "dark";
+const THEME_STORAGE_KEY = "ui-theme";
+const RIBBON_STORAGE_KEY = "ui-dev-ribbon";
+let currentTheme: ThemeChoice = "default";
+let forcedRibbonMode: "show" | "hide" | null = null;
+let defaultRibbonVisible = false;
+let currentBuildInfo: BuildInfo | null = null;
+let updateMiscBuildInfo: (() => void) | null = null;
+
+function readStoredTheme(): ThemeChoice {
+  if (typeof window === "undefined") return "default";
+  try {
+    const stored = window.localStorage?.getItem(THEME_STORAGE_KEY);
+    if (stored === "dark" || stored === "light" || stored === "default") {
+      return stored;
+    }
+    if (stored === "system") {
+      return "default";
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return "default";
+}
+
+function applyThemeChoice(choice: ThemeChoice, persist = true) {
+  currentTheme = choice;
+  const root = document.documentElement;
+  if (choice === "default") {
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", choice);
+  }
+  if (!persist || typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(THEME_STORAGE_KEY, choice);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function readRibbonPreference(): "show" | "hide" | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.localStorage?.getItem(RIBBON_STORAGE_KEY);
+    if (stored === "show" || stored === "hide") {
+      return stored;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+function storeRibbonPreference(mode: "show" | "hide" | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (mode === null) {
+      window.localStorage?.removeItem(RIBBON_STORAGE_KEY);
+    } else {
+      window.localStorage?.setItem(RIBBON_STORAGE_KEY, mode);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function updateDevRibbonDisplay() {
+  if (forcedRibbonMode === "show") {
+    devRibbon.style.display = "block";
+    return;
+  }
+  if (forcedRibbonMode === "hide") {
+    devRibbon.style.display = "none";
+    return;
+  }
+  devRibbon.style.display = defaultRibbonVisible ? "block" : "none";
+}
+
+currentTheme = readStoredTheme();
+applyThemeChoice(currentTheme, false);
+forcedRibbonMode = readRibbonPreference();
+updateDevRibbonDisplay();
+
+type SettingsTabId = "saving" | "appearance" | "misc";
+
+function applyBuildInfo() {
+  getBuildInfo()
+    .then(info => {
+      currentBuildInfo = info;
+      if (!info) {
+        buildInfoFooter.textContent = 'Build info unavailable';
+        defaultRibbonVisible = false;
+        updateDevRibbonDisplay();
+        if (updateMiscBuildInfo) updateMiscBuildInfo();
+        return;
+      }
+
+      buildInfoFooter.innerHTML = '';
+      const parts = [
+        ['Version', info.version],
+        ['Commit', info.commit],
+        ['Built', new Date(info.buildTime).toLocaleString()],
+      ];
+      parts.forEach(([_label, value], idx) => {
+        const span = document.createElement('span');
+        span.textContent = value;
+        buildInfoFooter.appendChild(span);
+        if (idx < parts.length - 1) {
+          const dot = document.createElement('span');
+          dot.textContent = '•';
+          buildInfoFooter.appendChild(dot);
+        }
+      });
+
+      defaultRibbonVisible = info.env !== 'production';
+      updateDevRibbonDisplay();
+      if (updateMiscBuildInfo) updateMiscBuildInfo();
+    })
+    .catch(() => {
+      currentBuildInfo = null;
+      buildInfoFooter.textContent = 'Build info unavailable';
+      defaultRibbonVisible = false;
+      updateDevRibbonDisplay();
+      if (updateMiscBuildInfo) updateMiscBuildInfo();
+    });
+}
+
 
 applyBuildInfo();
 setInterval(applyBuildInfo, 60_000);
+
+function setupSettingsUI() {
+  if (!settingsContainer) return;
+
+  updateMiscBuildInfo = null;
+  settingsContainer.innerHTML = '';
+
+  const tabs: Array<{ id: SettingsTabId; label: string; render: (panel: HTMLDivElement) => void }> = [
+    { id: "saving", label: "Saving", render: renderSavingTab },
+    { id: "appearance", label: "Appearance", render: renderAppearanceTab },
+    { id: "misc", label: "Misc", render: renderMiscTab },
+  ];
+
+  const tabRow = document.createElement('div');
+  tabRow.className = 'settings-subtabs';
+  const panelsWrap = document.createElement('div');
+  panelsWrap.className = 'settings-panels';
+
+  const registry = new Map<SettingsTabId, { button: HTMLButtonElement; panel: HTMLDivElement }>();
+
+  tabs.forEach(tab => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'settings-subtab-btn';
+    button.textContent = tab.label;
+    tabRow.appendChild(button);
+
+    const panel = document.createElement('div');
+    panel.className = 'settings-panel';
+    panel.dataset.subtab = tab.id;
+    tab.render(panel);
+    panelsWrap.appendChild(panel);
+
+    button.addEventListener('click', () => activate(tab.id));
+    registry.set(tab.id, { button, panel });
+  });
+
+  settingsContainer.append(tabRow, panelsWrap);
+
+  function activate(id: SettingsTabId) {
+    registry.forEach(({ button, panel }, key) => {
+      const active = key === id;
+      button.classList.toggle('active', active);
+      panel.classList.toggle('active', active);
+    });
+  }
+
+  activate('saving');
+
+  function renderSavingTab(panel: HTMLDivElement) {
+    panel.classList.add('settings-panel-saving');
+
+    const intro = document.createElement('p');
+    intro.className = 'settings-note';
+    intro.textContent = 'Autosaves run every 10 seconds. Use these controls for manual management or emergency backup.';
+    panel.appendChild(intro);
+
+    const buttonRow = document.createElement('div');
+    buttonRow.className = 'settings-button-row';
+
+    const manualSaveBtn = document.createElement('button');
+    manualSaveBtn.type = 'button';
+    manualSaveBtn.className = 'settings-btn';
+    manualSaveBtn.textContent = 'Save Now';
+    manualSaveBtn.addEventListener('click', () => {
+      saveState(state);
+      showStatus(`Saved at ${new Date().toLocaleTimeString()}`);
+    });
+
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'settings-btn';
+    exportBtn.textContent = 'Copy Save to Clipboard';
+    exportBtn.addEventListener('click', async () => {
+      try {
+        const payload = JSON.stringify({
+          strings: state.strings.toString(),
+          gens: state.gens.map(g => ({ units: g.units.toString(), bought: g.bought })),
+          lastTick: state.lastTick,
+          created: state.created,
+        }, null, 2);
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(payload);
+          showStatus('Copied save data to clipboard.');
+        } else {
+          showStatus('Clipboard API unavailable in this browser.', 'error');
+        }
+      } catch (err) {
+        console.error('Failed to copy save data:', err);
+        showStatus('Copy failed. Check browser permissions.', 'error');
+      }
+    });
+    if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.writeText) {
+      exportBtn.disabled = true;
+      exportBtn.title = 'Clipboard API unavailable in this environment';
+    }
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'settings-btn danger';
+    deleteBtn.textContent = 'Delete Save Data';
+    deleteBtn.addEventListener('click', () => {
+      const shouldReset = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm('Delete all progress? This cannot be undone.')
+        : true;
+      if (!shouldReset) return;
+      clearState();
+      const fresh = newState();
+      state.strings = fresh.strings;
+      state.gens = fresh.gens;
+      state.lastTick = fresh.lastTick;
+      state.created = fresh.created;
+      render();
+      saveState(state);
+      showStatus('Save data cleared. A new run has started.');
+    });
+
+    buttonRow.append(manualSaveBtn, exportBtn, deleteBtn);
+    panel.appendChild(buttonRow);
+
+    const importField = document.createElement('div');
+    importField.className = 'settings-field';
+
+    const importLabel = document.createElement('label');
+    importLabel.htmlFor = 'settings-import-area';
+    importLabel.textContent = 'Import save data';
+
+    const importArea = document.createElement('textarea');
+    importArea.id = 'settings-import-area';
+    importArea.rows = 6;
+    importArea.placeholder = 'Paste JSON save data here';
+
+    const importActions = document.createElement('div');
+    importActions.className = 'settings-button-row';
+
+    const importBtn = document.createElement('button');
+    importBtn.type = 'button';
+    importBtn.className = 'settings-btn';
+    importBtn.textContent = 'Import Save';
+    importBtn.addEventListener('click', () => {
+      const raw = importArea.value.trim();
+      if (!raw) {
+        showStatus('Paste save data before importing.', 'error');
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') throw new Error('Invalid payload');
+        const strings = typeof parsed.strings === 'string' ? parsed.strings : String(parsed.strings ?? '0');
+        state.strings = new Decimal(strings);
+        if (Array.isArray(parsed.gens)) {
+          for (let i = 0; i < state.gens.length; i++) {
+            const entry = parsed.gens[i] ?? {};
+            const units = typeof entry.units === 'string' ? entry.units : String(entry.units ?? '0');
+            state.gens[i].units = new Decimal(units);
+            state.gens[i].bought = Number(entry.bought ?? 0) || 0;
+          }
+        }
+        state.lastTick = typeof parsed.lastTick === 'number' ? parsed.lastTick : Date.now();
+        state.created = typeof parsed.created === 'number' ? parsed.created : Date.now();
+        saveState(state);
+        render();
+        importArea.value = '';
+        showStatus('Save data imported successfully.');
+      } catch (err) {
+        console.error('Import failed:', err);
+        showStatus('Import failed. Please verify the JSON payload.', 'error');
+      }
+    });
+
+    importActions.appendChild(importBtn);
+    importField.append(importLabel, importArea, importActions);
+    panel.appendChild(importField);
+
+    const status = document.createElement('div');
+    status.className = 'settings-status';
+    panel.appendChild(status);
+
+    let statusTimeout: number | undefined;
+    function showStatus(message: string, tone: 'info' | 'error' = 'info') {
+      status.textContent = message;
+      if (tone === 'error') {
+        status.dataset.tone = 'error';
+      } else {
+        status.removeAttribute('data-tone');
+      }
+      if (statusTimeout) window.clearTimeout(statusTimeout);
+      statusTimeout = window.setTimeout(() => {
+        status.textContent = '';
+        status.removeAttribute('data-tone');
+      }, 5000);
+    }
+
+    const hint = document.createElement('p');
+    hint.className = 'settings-note';
+    hint.textContent = 'Tip: manual saves are also written automatically shortly before you close or reload the tab.';
+    panel.appendChild(hint);
+  }
+
+  function renderAppearanceTab(panel: HTMLDivElement) {
+    panel.classList.add('settings-panel-appearance');
+
+    const intro = document.createElement('p');
+    intro.className = 'settings-note';
+    intro.textContent = 'Choose how Entropic Threads looks on this device.';
+    panel.appendChild(intro);
+
+    const field = document.createElement('div');
+    field.className = 'settings-field';
+
+    const label = document.createElement('label');
+    label.htmlFor = 'settings-theme-select';
+    label.textContent = 'Theme';
+
+    const select = document.createElement('select');
+    select.id = 'settings-theme-select';
+    const themeOptions: Array<{ value: ThemeChoice; label: string }> = [
+      { value: 'default', label: 'Default (classic)' },
+      { value: 'light', label: 'Light' },
+      { value: 'dark', label: 'Dark' },
+    ];
+    themeOptions.forEach(opt => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      select.appendChild(option);
+    });
+    select.value = currentTheme;
+
+    select.addEventListener('change', () => {
+      const choice = select.value as ThemeChoice;
+      applyThemeChoice(choice);
+    });
+
+    field.append(label, select);
+    panel.appendChild(field);
+
+    const note = document.createElement('p');
+    note.className = 'settings-note';
+    note.textContent = 'Theme preference is stored locally and will be remembered next time you return. Default keeps the classic gradient.';
+    panel.appendChild(note);
+  }
+
+  function renderMiscTab(panel: HTMLDivElement) {
+    panel.classList.add('settings-panel-misc');
+
+    const ribbonField = document.createElement('div');
+    ribbonField.className = 'settings-field';
+
+    const ribbonLabel = document.createElement('label');
+    ribbonLabel.htmlFor = 'settings-ribbon-mode';
+    ribbonLabel.textContent = 'Release ribbon behaviour';
+
+    const ribbonSelect = document.createElement('select');
+    ribbonSelect.id = 'settings-ribbon-mode';
+    const ribbonOptions: Array<{ value: 'auto' | 'show' | 'hide'; label: string }> = [
+      { value: 'auto', label: 'Follow build environment' },
+      { value: 'show', label: 'Always show ribbon' },
+      { value: 'hide', label: 'Hide ribbon' },
+    ];
+    ribbonOptions.forEach(opt => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      ribbonSelect.appendChild(option);
+    });
+    ribbonSelect.value = forcedRibbonMode ?? 'auto';
+
+    ribbonSelect.addEventListener('change', () => {
+      const mode = ribbonSelect.value as 'auto' | 'show' | 'hide';
+      forcedRibbonMode = mode === 'auto' ? null : mode;
+      storeRibbonPreference(forcedRibbonMode);
+      updateDevRibbonDisplay();
+    });
+
+    ribbonField.append(ribbonLabel, ribbonSelect);
+    panel.appendChild(ribbonField);
+
+    const miscNote = document.createElement('p');
+    miscNote.className = 'settings-note';
+    miscNote.textContent = 'Toggle experimental quality-of-life helpers and build diagnostics.';
+    panel.appendChild(miscNote);
+
+    const releaseSummary = document.createElement('p');
+    releaseSummary.className = 'settings-note';
+    panel.appendChild(releaseSummary);
+
+    const refreshReleaseSummary = () => {
+      if (currentBuildInfo) {
+        releaseSummary.textContent = `Current build: ${currentBuildInfo.version} (${currentBuildInfo.commit})`;
+      } else {
+        releaseSummary.textContent = 'Current build metadata unavailable.';
+      }
+    };
+
+    refreshReleaseSummary();
+    updateMiscBuildInfo = refreshReleaseSummary;
+  }
+}
 
 // Build generator rows dynamically
 type RowRefs = {
@@ -157,20 +736,8 @@ const state = loadState();
 const rows: RowRefs[] = [];
 for (let t = 0; t < GEN_CFG.length; t++) rows.push(makeRow(t));
 
-if (deleteSaveBtn) {
-  deleteSaveBtn.addEventListener("click", () => {
-    const shouldReset = typeof window !== "undefined" && typeof window.confirm === "function"
-      ? window.confirm("Delete all progress? This cannot be undone.")
-      : true;
-    if (!shouldReset) return;
-    clearState();
-    const fresh = newState();
-    state.strings = fresh.strings;
-    state.gens = fresh.gens;
-    state.lastTick = fresh.lastTick;
-    render();
-  });
-}
+setupSettingsUI();
+
 if (maxAllBtn) {
   maxAllBtn.addEventListener("click", () => {
     if (buyMaxAll(state)) {
