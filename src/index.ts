@@ -773,6 +773,10 @@ function format(d: Dec): string {
 
 // ---- render ----
 function render() {
+  if (statsActive) {
+    renderStats();
+  }
+
   stringsEl.textContent = format(state.strings);
 
   for (let t = 0; t < GEN_CFG.length; t++) {
@@ -793,6 +797,8 @@ function render() {
 const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
 const tabViews   = document.querySelectorAll<HTMLElement>(".tab-view");
 
+let statsActive = false;
+
 function activateTab(name: "game" | "stats") {
   // highlight the active button
   tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
@@ -800,7 +806,8 @@ function activateTab(name: "game" | "stats") {
   tabViews.forEach(v => v.classList.toggle("active", v.id === `tab-${name}`));
 
   // only render stats when Stats tab is activated
-  if (name === "stats") {
+  statsActive = name === "stats";
+  if (statsActive) {
     queueMicrotask(() => renderStats());
   }
 }
@@ -817,6 +824,10 @@ export function renderStats() {
   const root = document.getElementById('stats-container');
   if (!root) {
     console.warn('renderStats: #stats-container not found');
+    return;
+  }
+
+  if (!statsActive) {
     return;
   }
 
@@ -842,7 +853,6 @@ export function renderStats() {
     const rows: Array<[string, string]> = [
       ['Time Played', timeString],
       ['Strings Owned', toStr(format ? format(state.strings) : toStr(state.strings))],
-      ['Total Generator Units', toStr(totalUnits)],
       ['Total Purchases', (typeof totalBought === 'number' ? totalBought.toLocaleString() : toStr(totalBought))],
       ['Highest Active Tier', highestTier >= 0 ? `Gen${highestTier + 1}` : 'None'],
     ];
