@@ -1,13 +1,13 @@
 /// <reference lib="webworker" />
-import { advanceSimulation, buyMax, buyMaxAll, buyN, buyOne } from "./game.js";
+import { tick, buyMax, buyMaxAll, buyN, buyOne } from "./game.js";
 import { deserializeGameState, newState, serializeGameState, type SerializedGameState } from "./state.js";
 import type { GameState } from "./state.js";
 
-const STEP_SECONDS = 0.05;
+const STEP_SECONDS = 1 / 60;
 const TICK_INTERVAL_MS = STEP_SECONDS * 1000;
-const BROADCAST_INTERVAL_MS = 200;
+const BROADCAST_INTERVAL_MS = 33;
 const MAX_FRAME_MS = 250;
-const MAX_STEPS_PER_FRAME = 40;
+const MAX_STEPS_PER_FRAME = 300;
 const MAX_OFFLINE_SECONDS = 60 * 60; // 1 hour cap
 
 let state: GameState = newState();
@@ -48,7 +48,7 @@ function log(message: string, level: "info" | "warn" = "info") {
 }
 
 function simulateStep(stepSeconds: number) {
-  advanceSimulation(state, stepSeconds);
+  tick(state, stepSeconds);
   totalSimulatedSeconds += stepSeconds;
 }
 
@@ -63,6 +63,7 @@ function flushAccumulator() {
     log("Simulation falling behind real time; dropping excess accumulator.", "warn");
     accumulator = STEP_SECONDS; // keep small remainder to avoid freeze
   }
+  return steps > 0;
 }
 
 function stepFrame() {
@@ -72,9 +73,11 @@ function stepFrame() {
   lastFrameTime = now;
 
   accumulator += frameMs / 1000;
-  flushAccumulator();
+  const progressed = flushAccumulator();
 
-  if (now - lastBroadcast >= BROADCAST_INTERVAL_MS) {
+  state.lastTick = Date.now();
+
+  if (progressed || now - lastBroadcast >= BROADCAST_INTERVAL_MS) {
     lastBroadcast = now;
     postSnapshot("tick");
   }

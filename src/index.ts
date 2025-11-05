@@ -1,6 +1,5 @@
 import Decimal from "break_eternity.js";
-import { loadState, saveState, newState, clearState } from "./state.js";
-import { tick, buyOne, buyMaxAll } from "./game.js";
+import { loadState, saveState, newState, clearState, serializeGameState, deserializeGameState, type GameState, type SerializedGameState } from "./state.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT } from "./constants.js";
@@ -15,15 +14,9 @@ type Dec = InstanceType<typeof Decimal>;
 const D = (x:number | string| Dec) => 
     x instanceof Decimal ? x : new Decimal(x);
 
-const STEP_SECONDS = 0.05; // 50 ms fixed simulation step
-const MAX_STEPS_PER_FRAME = 40;
-const OFFLINE_CAP_SECONDS = 60 * 60;
-const DRIFT_WARN_RATIO = 1.5;
-const DRIFT_RESET_RATIO = 1.2;
-const DRIFT_LOG_INTERVAL_MS = 2000;
-
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
+const stringsPerSecEl = document.getElementById("strings-ps") as HTMLSpanElement | null;
 const gensContainer = document.getElementById("gens")!;
 const settingsContainer = document.getElementById("settings-container") as HTMLDivElement | null;
 const maxAllBtn = document.getElementById("max-all") as HTMLButtonElement | null;
@@ -160,6 +153,40 @@ if (!document.getElementById('settings-style')) {
 }
 
 ensureThemeStyles();
+
+let stringsPerSecond = new Decimal(0);
+let lastSnapshotStrings: Decimal | null = null;
+let lastSnapshotTime = performance.now();
+
+function resetStringRateTracking(current: Decimal) {
+  stringsPerSecond = new Decimal(0);
+  lastSnapshotStrings = new Decimal(current.toString());
+  lastSnapshotTime = performance.now();
+  if (stringsPerSecEl) {
+    stringsPerSecEl.textContent = format(stringsPerSecond);
+  }
+}
+
+function updateStringRateFromSnapshot(nextState: GameState, now: number) {
+  if (lastSnapshotStrings) {
+    const deltaTime = (now - lastSnapshotTime) / 1000;
+    if (deltaTime > 1e-3) {
+      const deltaStrings = nextState.strings.sub(lastSnapshotStrings);
+      if (deltaStrings.greaterThanOrEqualTo(0)) {
+        stringsPerSecond = deltaStrings.div(deltaTime);
+      } else {
+        stringsPerSecond = new Decimal(0);
+      }
+    }
+  } else {
+    stringsPerSecond = new Decimal(0);
+  }
+  lastSnapshotStrings = new Decimal(nextState.strings.toString());
+  lastSnapshotTime = now;
+  if (stringsPerSecEl) {
+    stringsPerSecEl.textContent = format(stringsPerSecond);
+  }
+}
 
 const RIBBON_STORAGE_KEY = "ui-dev-ribbon";
 let currentTheme: ThemeChoice = "default";
@@ -324,6 +351,7 @@ function setupSettingsUI() {
     manualSaveBtn.textContent = 'Save Now';
     manualSaveBtn.addEventListener('click', () => {
       saveState(state);
+      lastSaveTimestamp = performance.now();
       showStatus(`Saved at ${new Date().toLocaleTimeString()}`);
     });
 
@@ -333,12 +361,7 @@ function setupSettingsUI() {
     exportBtn.textContent = 'Copy Save to Clipboard';
     exportBtn.addEventListener('click', async () => {
       try {
-        const payload = JSON.stringify({
-          strings: state.strings.toString(),
-          gens: state.gens.map(g => ({ units: g.units.toString(), bought: g.bought })),
-          lastTick: state.lastTick,
-          created: state.created,
-        }, null, 2);
+        const payload = JSON.stringify(serializeGameState(state), null, 2);
         if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(payload);
           showStatus('Copied save data to clipboard.');
@@ -365,13 +388,12 @@ function setupSettingsUI() {
         : true;
       if (!shouldReset) return;
       clearState();
-      const fresh = newState();
-      state.strings = fresh.strings;
-      state.gens = fresh.gens;
-      state.lastTick = fresh.lastTick;
-      state.created = fresh.created;
-      render();
+      state = newState();
+      resetStringRateTracking(state.strings);
       saveState(state);
+      lastSaveTimestamp = performance.now();
+      render();
+      simWorker.postMessage({ type: 'replaceState', state: serializeGameState(state) });
       showStatus('Save data cleared. A new run has started.');
     });
 
@@ -406,20 +428,12 @@ function setupSettingsUI() {
       try {
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') throw new Error('Invalid payload');
-        const strings = typeof parsed.strings === 'string' ? parsed.strings : String(parsed.strings ?? '0');
-        state.strings = new Decimal(strings);
-        if (Array.isArray(parsed.gens)) {
-          for (let i = 0; i < state.gens.length; i++) {
-            const entry = parsed.gens[i] ?? {};
-            const units = typeof entry.units === 'string' ? entry.units : String(entry.units ?? '0');
-            state.gens[i].units = new Decimal(units);
-            state.gens[i].bought = Number(entry.bought ?? 0) || 0;
-          }
-        }
-        state.lastTick = typeof parsed.lastTick === 'number' ? parsed.lastTick : Date.now();
-        state.created = typeof parsed.created === 'number' ? parsed.created : Date.now();
+        state = deserializeGameState(parsed as Partial<SerializedGameState>);
+        resetStringRateTracking(state.strings);
         saveState(state);
+        lastSaveTimestamp = performance.now();
         render();
+        simWorker.postMessage({ type: 'replaceState', state: serializeGameState(state) });
         importArea.value = '';
         showStatus('Save data imported successfully.');
       } catch (err) {
@@ -594,27 +608,25 @@ function makeRow(tier: number): RowRefs {
 
   // Wire handlers
   buy1Btn.addEventListener("click", () => {
-    const got: boolean = buyOne(state, tier);
-    if (got) {
-      render();
-    }
+    simWorker.postMessage({ type: "action", action: "buyOne", tier });
   });
 
   return { row, name, units, bought, multiplier, nextCost, buy1: buy1Btn };
 }
 
-const state = loadState();
-
-let accumulator = 0;
-let lastFrameTime = performance.now();
-let loopStartWall = lastFrameTime;
-let totalSimulatedSeconds = 0;
-let warnedAboutDrift = false;
-let lastDriftLog = lastFrameTime;
-
+let state: GameState = loadState();
+resetStringRateTracking(state.strings);
 const rows: RowRefs[] = [];
 
-applyOfflineProgress();
+const simWorker = new Worker(new URL('./simWorker.ts', import.meta.url), { type: 'module' });
+const initialOfflineSeconds = Math.max(0, (Date.now() - state.lastTick) / 1000);
+let lastSaveTimestamp = performance.now();
+
+simWorker.postMessage({
+  type: 'init',
+  state: serializeGameState(state),
+  offlineSeconds: initialOfflineSeconds,
+});
 
 for (let t = 0; t < GEN_CFG.length; t++) rows.push(makeRow(t));
 
@@ -622,17 +634,13 @@ setupSettingsUI();
 
 if (maxAllBtn) {
   maxAllBtn.addEventListener("click", () => {
-    if (buyMaxAll(state)) {
-      render();
-    }
+    simWorker.postMessage({ type: "action", action: "buyMaxAll" });
   });
 }
 //#region keybindings;
 document.addEventListener("keydown", event => {
   if (event.key === "m" || event.key === "M") {
-    if (buyMaxAll(state)) {
-      render();
-    }
+    simWorker.postMessage({ type: "action", action: "buyMaxAll" });
   }
 });
 
@@ -660,6 +668,9 @@ function render() {
   }
 
   stringsEl.textContent = format(state.strings);
+  if (stringsPerSecEl) {
+    stringsPerSecEl.textContent = format(stringsPerSecond);
+  }
 
   for (let t = 0; t < GEN_CFG.length; t++) {
     const cfg = GEN_CFG[t];
@@ -763,105 +774,41 @@ export function renderStats() {
   }
 }
 
+simWorker.addEventListener("message", event => {
+  const msg = event.data;
+  if (!msg || typeof msg !== "object") return;
 
-function applyOfflineProgress() {
-  const now = Date.now();
-  const elapsedSeconds = Math.max(0, (now - state.lastTick) / 1000);
-
-  if (elapsedSeconds <= 0) {
-    state.lastTick = now;
-    const wall = performance.now();
-    accumulator = 0;
-    totalSimulatedSeconds = 0;
-    lastFrameTime = wall;
-    loopStartWall = wall;
-    lastDriftLog = wall;
-    warnedAboutDrift = false;
-    return;
-  }
-
-  const cappedSeconds = Math.min(elapsedSeconds, OFFLINE_CAP_SECONDS);
-  if (elapsedSeconds > OFFLINE_CAP_SECONDS) {
-    console.warn(`Offline progress capped to ${(OFFLINE_CAP_SECONDS / 3600).toFixed(1)} hour(s).`);
-  }
-
-  let remaining = cappedSeconds;
-  let simulated = 0;
-  let steps = 0;
-  while (remaining >= STEP_SECONDS) {
-    tick(state, STEP_SECONDS);
-    remaining -= STEP_SECONDS;
-    simulated += STEP_SECONDS;
-    steps += 1;
-  }
-  if (remaining > 1e-6) {
-    tick(state, remaining);
-    simulated += remaining;
-    steps += 1;
-  }
-
-  if (simulated > 0) {
-    console.info(`Applied ${simulated.toFixed(2)}s of offline progress in ${steps} step(s).`);
-  }
-
-  state.lastTick = now;
-  accumulator = 0;
-  totalSimulatedSeconds = 0;
-  const wall = performance.now();
-  lastFrameTime = wall;
-  loopStartWall = wall;
-  lastDriftLog = wall;
-  warnedAboutDrift = false;
-}
-
-// ---- main loop + autosave ----
-let lastSave = performance.now();
-function loop(ts: number) {
-  const deltaSeconds = Math.max(0, (ts - lastFrameTime) / 1000);
-  lastFrameTime = ts;
-
-  accumulator = Math.min(accumulator + deltaSeconds, OFFLINE_CAP_SECONDS);
-
-  let steps = 0;
-  while (accumulator >= STEP_SECONDS && steps < MAX_STEPS_PER_FRAME) {
-    tick(state, STEP_SECONDS);
-    accumulator -= STEP_SECONDS;
-    totalSimulatedSeconds += STEP_SECONDS;
-    steps += 1;
-  }
-
-  if (steps === MAX_STEPS_PER_FRAME && accumulator >= STEP_SECONDS) {
-    if (ts - lastDriftLog >= DRIFT_LOG_INTERVAL_MS) {
-      console.warn('Simulation backlog exceeded per-frame budget; trimming remainder.');
-      lastDriftLog = ts;
-    }
-    accumulator = STEP_SECONDS;
-  }
-
-  state.lastTick = Date.now();
-  render();
-
-  if (ts - lastSave > 10_000) {
-    saveState(state);
-    lastSave = ts;
-  }
-
-  const wallSeconds = (ts - loopStartWall) / 1000;
-  if (wallSeconds > 0) {
-    const ratio = totalSimulatedSeconds / wallSeconds;
-    if (ratio > DRIFT_WARN_RATIO) {
-      if (!warnedAboutDrift || ts - lastDriftLog >= DRIFT_LOG_INTERVAL_MS) {
-        console.warn(`Simulation running ${ratio.toFixed(2)}× faster than wall clock; dropping backlog.`);
-        lastDriftLog = ts;
+  switch (msg.type) {
+    case "state": {
+      const snapshot = msg.snapshot as SerializedGameState;
+      const now = performance.now();
+      const nextState = deserializeGameState(snapshot);
+      updateStringRateFromSnapshot(nextState, now);
+      state = nextState;
+      render();
+      if (now - lastSaveTimestamp > 10_000) {
+        saveState(state);
+        lastSaveTimestamp = now;
       }
-      warnedAboutDrift = true;
-    } else if (ratio < DRIFT_RESET_RATIO) {
-      warnedAboutDrift = false;
+      break;
     }
+    case "log": {
+      const level = msg.level === "warn" ? "warn" : "info";
+      const prefixed = `[sim] ${msg.message}`;
+      if (level === "warn") {
+        console.warn(prefixed);
+      } else {
+        console.info(prefixed);
+      }
+      break;
+    }
+    default:
+      break;
   }
+});
 
-  requestAnimationFrame(loop);
-}
+simWorker.addEventListener("error", event => {
+  console.error("Simulation worker error:", event);
+});
 
 render();
-requestAnimationFrame(loop);
