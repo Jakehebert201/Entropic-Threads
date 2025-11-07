@@ -95,6 +95,7 @@ export type SerializedGameState = {
   created: number;
   braid: SerializedBraidState;
   totalStringsProduced: string;
+  bestStrings: string;
 };
 
 function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGameState {
@@ -111,6 +112,9 @@ function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGame
     totalStringsProduced: typeof data.totalStringsProduced === 'string'
       ? data.totalStringsProduced
       : String(data.totalStringsProduced ?? '0'),
+    bestStrings: typeof data.bestStrings === 'string'
+      ? data.bestStrings
+      : (typeof data.braid?.bestStrings === 'string' ? data.braid.bestStrings : '0'),
   };
 }
 
@@ -122,6 +126,7 @@ export function serializeGameState(state: GameState): SerializedGameState {
     created: state.created,
     braid: serializeBraidState(state.braid),
     totalStringsProduced: state.totalStringsProduced.toString(),
+    bestStrings: state.braid.bestStrings.toString(),
   };
 }
 
@@ -133,12 +138,14 @@ export function deserializeGameState(serialized: Partial<SerializedGameState>): 
     if (!entry) return base;
     return { units: new Decimal(entry.units), bought: entry.bought };
   });
+  const braid = deserializeBraidState(normalized.braid);
+  braid.bestStrings = new Decimal(normalized.bestStrings);
   return {
     strings: new Decimal(normalized.strings),
     gens,
     lastTick: normalized.lastTick,
     created: normalized.created,
-    braid: deserializeBraidState(normalized.braid),
+    braid,
     totalStringsProduced: new Decimal(normalized.totalStringsProduced),
   };
 }
