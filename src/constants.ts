@@ -42,6 +42,9 @@ export const SUPER_STEP  = new Decimal(1.03); // each buy past 50 multiplies cos
 // Production boost per purchase
 export const PER_PURCHASE_MULT = new Decimal(1.1);
 
+export const FIBER_LIMIT = Decimal.pow(2, 1024);
+export const FIBER_RESET_BOOST = new Decimal(4);
+
 export function tierBaseCost(tier: number): Decimal {
   const cost = BASE_COSTS[tier];
   if (!cost) throw new RangeError(`tierBaseCost out of bounds for tier ${tier}`);

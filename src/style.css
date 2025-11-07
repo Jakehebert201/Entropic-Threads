@@ -168,6 +168,39 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
+.fiber-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.98));
+  z-index: 9999;
+}
+
+.fiber-reset-btn {
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  padding: 1.5rem 3.5rem;
+  border-radius: 999px;
+  border: none;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.95));
+  color: #0f172a;
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.45);
+}
+
+.fiber-reset-btn:active {
+  transform: scale(0.98);
+}
+
+body.fiber-lock > :not(.fiber-overlay) {
+  display: none !important;
+}
+
+body.fiber-lock .fiber-overlay {
+  display: flex;
+}
 .gen-header,
 .gen-row {
   display: grid;

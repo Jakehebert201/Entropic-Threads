@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { tick, buyMax, buyMaxAll, buyN, buyOne, braidReset, grantStrings, grantGenerators } from "./game.js";
+import { tick, buyMax, buyMaxAll, buyN, buyOne, braidReset, grantStrings, grantGenerators, fiberReset } from "./game.js";
 import { deserializeGameState, newState, serializeGameState, type SerializedGameState } from "./state.js";
 import type { GameState } from "./state.js";
 
@@ -146,6 +146,9 @@ function handleAction(msg: any) {
       break;
     case "braidReset":
       changed = braidReset(state);
+      break;
+    case "fiberReset":
+      changed = fiberReset(state);
       break;
     case "devAddStrings":
       changed = grantStrings(state, msg.amount);

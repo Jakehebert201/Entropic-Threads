@@ -1,7 +1,7 @@
 import Decimal from "break_eternity.js";
 import { newGeneratorState } from "./generators.js";
 import type { GeneratorState } from "./generators.js";
-import { BRAID_PATHS, BRAID_UNLOCK_STRINGS } from "./constants.js";
+import { BRAID_PATHS, BRAID_UNLOCK_STRINGS, FIBER_LIMIT } from "./constants.js";
 import { ensureActiveSlot, saveActiveSlot, resetActiveSlot } from "./saving.js";
 
 type Dec = InstanceType<typeof Decimal>;
@@ -10,6 +10,7 @@ const D = (x:number | string| Dec) =>
 
 
 const BRAID_PATH_COUNT = BRAID_PATHS.length;
+const FIBER_DEFAULT_BOOST = new Decimal(1);
 
 export type SerializedBraidState = {
   resets: number;
@@ -27,6 +28,18 @@ export type BraidState = {
   unlocked: boolean;
 };
 
+export type SerializedFiberState = {
+  resets: number;
+  boost: string;
+  limitReached: boolean;
+};
+
+export type FiberState = {
+  resets: number;
+  boost: Dec;
+  limitReached: boolean;
+};
+
 function blankChainMultipliers(): Decimal[] {
   return Array.from({ length: BRAID_PATH_COUNT }, () => new Decimal(1));
 }
@@ -38,6 +51,14 @@ export function newBraidState(): BraidState {
     lastResetStrings: new Decimal(0),
     chainMultipliers: blankChainMultipliers(),
     unlocked: false,
+  };
+}
+
+export function newFiberState(): FiberState {
+  return {
+    resets: 0,
+    boost: new Decimal(FIBER_DEFAULT_BOOST),
+    limitReached: false,
   };
 }
 
@@ -56,6 +77,14 @@ function normalizeSerializedBraid(data?: Partial<SerializedBraidState>): Seriali
   };
 }
 
+function normalizeSerializedFiber(data?: Partial<SerializedFiberState>): SerializedFiberState {
+  return {
+    resets: typeof data?.resets === 'number' ? data.resets : 0,
+    boost: typeof data?.boost === 'string' ? data.boost : String(data?.boost ?? '1'),
+    limitReached: data?.limitReached === true,
+  };
+}
+
 function serializeBraidState(braid: BraidState): SerializedBraidState {
   return {
     resets: braid.resets,
@@ -63,6 +92,14 @@ function serializeBraidState(braid: BraidState): SerializedBraidState {
     lastResetStrings: braid.lastResetStrings.toString(),
     chainMultipliers: braid.chainMultipliers.map(m => m.toString()),
     unlocked: braid.unlocked,
+  };
+}
+
+function serializeFiberState(fiber: FiberState): SerializedFiberState {
+  return {
+    resets: fiber.resets,
+    boost: fiber.boost.toString(),
+    limitReached: fiber.limitReached,
   };
 }
 
@@ -88,6 +125,15 @@ function deserializeBraidState(data?: SerializedBraidState): BraidState {
   };
 }
 
+function deserializeFiberState(data?: SerializedFiberState): FiberState {
+  if (!data) return newFiberState();
+  return {
+    resets: typeof data.resets === 'number' ? data.resets : 0,
+    boost: new Decimal(data.boost ?? '1'),
+    limitReached: data.limitReached === true,
+  };
+}
+
 export type SerializedGameState = {
   strings: string;
   gens: { units: string; bought: number }[];
@@ -96,6 +142,7 @@ export type SerializedGameState = {
   braid: SerializedBraidState;
   totalStringsProduced: string;
   bestStrings: string;
+  fiber: SerializedFiberState;
 };
 
 function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGameState {
@@ -115,6 +162,7 @@ function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGame
     bestStrings: typeof data.bestStrings === 'string'
       ? data.bestStrings
       : (typeof data.braid?.bestStrings === 'string' ? data.braid.bestStrings : '0'),
+    fiber: normalizeSerializedFiber(data.fiber),
   };
 }
 
@@ -127,6 +175,7 @@ export function serializeGameState(state: GameState): SerializedGameState {
     braid: serializeBraidState(state.braid),
     totalStringsProduced: state.totalStringsProduced.toString(),
     bestStrings: state.braid.bestStrings.toString(),
+    fiber: serializeFiberState(state.fiber),
   };
 }
 
@@ -140,13 +189,24 @@ export function deserializeGameState(serialized: Partial<SerializedGameState>): 
   });
   const braid = deserializeBraidState(normalized.braid);
   braid.bestStrings = new Decimal(normalized.bestStrings);
+  const fiber = deserializeFiberState(normalized.fiber);
+  let strings = new Decimal(normalized.strings);
+  if (strings.greaterThanOrEqualTo(FIBER_LIMIT)) {
+    strings = Decimal.min(strings, FIBER_LIMIT);
+    fiber.limitReached = true;
+  }
+  let totalStringsProduced = new Decimal(normalized.totalStringsProduced);
+  if (totalStringsProduced.greaterThan(FIBER_LIMIT)) {
+    totalStringsProduced = FIBER_LIMIT;
+  }
   return {
-    strings: new Decimal(normalized.strings),
+    strings,
     gens,
     lastTick: normalized.lastTick,
     created: normalized.created,
     braid,
-    totalStringsProduced: new Decimal(normalized.totalStringsProduced),
+    totalStringsProduced,
+    fiber,
   };
 }
 
@@ -157,6 +217,7 @@ export type GameState = {
   created: number;
   braid: BraidState;
   totalStringsProduced: Dec;
+  fiber: FiberState;
 };
 
 export function newState(): GameState {
@@ -167,6 +228,7 @@ export function newState(): GameState {
     created: Date.now(),
     braid: newBraidState(),
     totalStringsProduced: new Decimal(0),
+    fiber: newFiberState(),
   };
 }
 //loading will break time created, how do I fix this?

@@ -55,6 +55,7 @@ const braidLastEl = document.getElementById("braid-last") as HTMLSpanElement | n
 const braidCountEl = document.getElementById("braid-count") as HTMLSpanElement | null;
 const braidPathsContainer = document.getElementById("braid-paths") as HTMLDivElement | null;
 const statsContainer = document.getElementById("stats-container") as HTMLDivElement | null;
+const fiberResetBtn = document.getElementById("fiber-reset") as HTMLButtonElement | null;
 
 const buildInfoFooter = document.createElement("div");
 buildInfoFooter.id = "build-info-footer";
@@ -887,6 +888,17 @@ if (braidResetBtn) {
     simWorker.postMessage({ type: 'action', action: 'braidReset' });
   });
 }
+
+if (fiberResetBtn) {
+  fiberResetBtn.addEventListener('click', () => {
+    if (!state.fiber?.limitReached) return;
+    fiberResetBtn.disabled = true;
+    simWorker.postMessage({ type: 'action', action: 'fiberReset' });
+    window.setTimeout(() => {
+      fiberResetBtn.disabled = false;
+    }, 500);
+  });
+}
 //#region keybindings;
 document.addEventListener("keydown", event => {
   if (event.key === "m" || event.key === "M") {
@@ -930,6 +942,8 @@ function renderBraidSection() {
 
 // ---- render ----
 function render() {
+  document.body.classList.toggle('fiber-lock', state.fiber?.limitReached === true);
+
   if (statsActive && statsContainer) {
     renderStatsView(state, statsContainer, format);
   }

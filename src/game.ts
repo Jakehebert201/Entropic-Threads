@@ -1,15 +1,18 @@
 import Decimal from "break_eternity.js";
-import { GEN_CFG } from "./generators.js";
+import { GEN_CFG, newGeneratorState } from "./generators.js";
 import type { GeneratorConfig } from "./generators.js";
 import { nextCost, totalCostFor } from "./economy.js";
-import { SUPER_START, SUPER_STEP, costMultForTier, PER_PURCHASE_MULT } from "./constants.js";
+import { SUPER_START, SUPER_STEP, costMultForTier, PER_PURCHASE_MULT, FIBER_LIMIT, FIBER_RESET_BOOST } from "./constants.js";
 import { braidChainMultiplier, applyBraidReset, ensureBraidUnlock } from "./braid.js";
 import type { GameState } from "./state.js";
-import { saveState } from "./state.js";
+import { saveState, newBraidState } from "./state.js";
 
 export function tick(s: GameState, dtSeconds: number) {
   const dt = Math.min(Math.max(dtSeconds, 0), 0.5); // clamp dt to avoid huge spikes or negatives
   if (dt <= 0) return;
+  if (s.fiber.limitReached) return;
+
+  const fiberBoost = s.fiber.boost ?? new Decimal(1);
 
   // Cascade: high → low, with per-purchase power applied to the producing tier.
   for (let i = GEN_CFG.length - 1; i >= 1; i--) {
@@ -21,7 +24,7 @@ export function tick(s: GameState, dtSeconds: number) {
     const power = PER_PURCHASE_MULT.pow(gen.bought);         // 2^bought_i
     const chainBonus = braidChainMultiplier(s, i);
     const effRate = cfg.prodRate.mul(power).mul(chainBonus); // boosted rate for this tier plus braid
-    const produced = gen.units.mul(effRate).mul(dt);
+    const produced = gen.units.mul(effRate).mul(dt).mul(fiberBoost);
 
     lower.units = lower.units.add(produced);
   }
@@ -32,10 +35,16 @@ export function tick(s: GameState, dtSeconds: number) {
   if (gen0 && cfg0) {
     const g0Power = PER_PURCHASE_MULT.pow(gen0.bought);      // 2^bought_0
     const chainBonus = braidChainMultiplier(s, 0);
-    const baseStrings = gen0.units.mul(cfg0.prodRate.mul(g0Power)).mul(chainBonus).mul(dt);
-    s.totalStringsProduced = s.totalStringsProduced.add(baseStrings);
+    const baseStrings = gen0.units
+      .mul(cfg0.prodRate.mul(g0Power))
+      .mul(chainBonus)
+      .mul(dt)
+      .mul(fiberBoost);
+    s.totalStringsProduced = Decimal.min(FIBER_LIMIT, s.totalStringsProduced.add(baseStrings));
     s.strings = s.strings.add(baseStrings);
   }
+
+  if (applyFiberCap(s)) return;
 
   if (ensureBraidUnlock(s)) {
     saveState(s);
@@ -43,6 +52,7 @@ export function tick(s: GameState, dtSeconds: number) {
 }
 
 export function buyOne(s: GameState, tier: number): boolean {
+  if (s.fiber.limitReached) return false;
   const cfg = GEN_CFG[tier];
   const gen = s.gens[tier];
   if (!cfg || !gen) return false;
@@ -59,6 +69,7 @@ export function buyOne(s: GameState, tier: number): boolean {
 
 export function buyN(s: GameState, tier: number, n: number): boolean {
   if (n <= 0) return false;
+  if (s.fiber.limitReached) return false;
 
   const cfg = GEN_CFG[tier];
   const gen = s.gens[tier];
@@ -75,6 +86,7 @@ export function buyN(s: GameState, tier: number, n: number): boolean {
 }
 
 export function buyMax(s: GameState, tier: number): boolean {
+  if (s.fiber.limitReached) return false;
   const cfg = GEN_CFG[tier];
   const gen = s.gens[tier];
   if (!cfg || !gen) return false;
@@ -90,6 +102,7 @@ export function buyMax(s: GameState, tier: number): boolean {
 }
 
 export function buyMaxAll(s: GameState): boolean {
+  if (s.fiber.limitReached) return false;
   let purchased = false;
   for (let tier = GEN_CFG.length - 1; tier >= 0; tier--) {
     const cfg = GEN_CFG[tier];
@@ -107,6 +120,7 @@ export function buyMaxAll(s: GameState): boolean {
 }
 
 export function grantStrings(s: GameState, rawAmount: Decimal | number | string): boolean {
+  if (s.fiber.limitReached) return false;
   let amount: Decimal;
   try {
     amount = new Decimal(rawAmount);
@@ -115,11 +129,13 @@ export function grantStrings(s: GameState, rawAmount: Decimal | number | string)
   }
   if (amount.lessThanOrEqualTo(0)) return false;
   s.strings = s.strings.add(amount);
+  applyFiberCap(s);
   saveState(s);
   return true;
 }
 
 export function grantGenerators(s: GameState, tier: number, rawCount: number | string): boolean {
+  if (s.fiber.limitReached) return false;
   const gen = s.gens[tier];
   if (!gen) return false;
   const count = Math.floor(Number(rawCount));
@@ -132,9 +148,36 @@ export function grantGenerators(s: GameState, tier: number, rawCount: number | s
 }
 
 export function braidReset(s: GameState): boolean {
+  if (s.fiber.limitReached) return false;
   const changed = applyBraidReset(s);
   if (changed) saveState(s);
   return changed;
+}
+
+export function fiberReset(s: GameState): boolean {
+  if (!s.fiber.limitReached) return false;
+  s.fiber.resets += 1;
+  s.fiber.boost = (s.fiber.boost ?? new Decimal(1)).mul(FIBER_RESET_BOOST);
+  s.fiber.limitReached = false;
+  s.strings = new Decimal(2);
+  s.totalStringsProduced = new Decimal(0);
+  s.gens = newGeneratorState();
+  s.braid = newBraidState();
+  s.lastTick = Date.now();
+  s.created = Date.now();
+  saveState(s);
+  return true;
+}
+
+function applyFiberCap(s: GameState): boolean {
+  if (s.strings.lessThan(FIBER_LIMIT)) return false;
+  s.strings = Decimal.min(s.strings, FIBER_LIMIT);
+  s.totalStringsProduced = Decimal.min(s.totalStringsProduced, FIBER_LIMIT);
+  if (!s.fiber.limitReached) {
+    s.fiber.limitReached = true;
+    saveState(s);
+  }
+  return true;
 }
 
 // -------- internals --------

@@ -28,8 +28,9 @@ export function buildBraidPathRows(container: HTMLDivElement | null): BraidPathR
     label.textContent = `Chain ${index + 1} (Gen ${tiers.map(t => t + 1).join(', ')})`;
 
     const targets = document.createElement('div');
-    targets.className = 'braid-path-targets';
-    targets.textContent = describeChainTargets(tiers);
+    //DO NOT REMOVE THIS COMMENT: Too much text
+    //targets.className = 'braid-path-targets';
+    //targets.textContent = describeChainTargets(tiers);
 
     info.append(label, targets);
 
