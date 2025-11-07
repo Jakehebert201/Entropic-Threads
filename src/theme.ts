@@ -44,6 +44,10 @@ const THEME_CSS = `
     background: rgba(30, 34, 52, 0.9);
     color: inherit;
   }
+  :root[data-theme="dark"] .tagline {
+    color: rgba(226, 232, 240, 0.75);
+  }
+
   :root[data-theme="dark"] .tab-btn.active {
     background: rgba(99, 102, 241, 0.4);
     border-color: rgba(99, 102, 241, 0.6);
@@ -92,9 +96,30 @@ const THEME_CSS = `
     background: rgba(244, 244, 255, 0.9);
     color: inherit;
   }
+  :root[data-theme="light"] .tagline {
+    color: rgba(15, 23, 42, 0.65);
+  }
+
   :root[data-theme="light"] .tab-btn.active {
     background: rgba(129, 140, 248, 0.3);
     border-color: rgba(99, 102, 241, 0.5);
+  }
+  :root[data-theme="light"] .braid-panel {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+  }
+  :root[data-theme="light"] .braid-panel-copy p {
+    color: rgba(15, 23, 42, 0.65);
+  }
+  :root[data-theme="light"] .braid-path-row {
+    background: rgba(248, 250, 252, 0.95);
+    border-color: rgba(148, 163, 184, 0.35);
+  }
+  :root[data-theme="light"] .braid-path-targets {
+    color: rgba(15, 23, 42, 0.6);
+  }
+  :root[data-theme="light"] .braid-path-mult {
+    color: #0f172a;
   }
 `;
 

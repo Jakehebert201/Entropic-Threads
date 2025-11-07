@@ -2,7 +2,7 @@ import Decimal from "break_eternity.js";
 import { loadState, saveState, newState, serializeGameState, deserializeGameState, type GameState, type SerializedGameState } from "./state.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
-import { PER_PURCHASE_MULT, BRAID_PATHS, BRAID_CHAIN_BASE } from "./constants.js";
+import { PER_PURCHASE_MULT } from "./constants.js";
 import { ensureBraidUnlock, braidChainMultiplier, ensureBraidBase } from "./braid.js";
 import { timePlayed, aggregateStats, } from "./stats.js";
 
@@ -10,6 +10,9 @@ import { getBuildInfo } from "./build-info.js";
 import type { BuildInfo } from "./build-info.js";
 import { ensureThemeStyles, readStoredTheme, applyThemeChoice, THEME_OPTIONS } from "./theme.js";
 import type { ThemeChoice } from "./theme.js";
+import { buildBraidPathRows, renderBraidPanel, type BraidPathRefs } from "./ui/braidPanel.js";
+import { buildDevTools, applyDevTabVisibility } from "./ui/devTools.js";
+import { renderStatsView } from "./ui/statsView.js";
 import {
   getActiveSlot,
   listSlots,
@@ -51,6 +54,7 @@ const braidBestEl = document.getElementById("braid-best") as HTMLSpanElement | n
 const braidLastEl = document.getElementById("braid-last") as HTMLSpanElement | null;
 const braidCountEl = document.getElementById("braid-count") as HTMLSpanElement | null;
 const braidPathsContainer = document.getElementById("braid-paths") as HTMLDivElement | null;
+const statsContainer = document.getElementById("stats-container") as HTMLDivElement | null;
 
 const buildInfoFooter = document.createElement("div");
 buildInfoFooter.id = "build-info-footer";
@@ -269,21 +273,16 @@ function updateDevRibbonDisplay() {
 }
 
 function updateDevTabVisibility() {
-  if (!devTabBtn || !devTabView) return;
-  const allow = !IS_PROD_BUILD && devTabShouldBeVisible;
-  devTabBtn.hidden = !allow;
-  devTabView.hidden = !allow;
-  if (!allow) {
-    if (currentTab === "dev") {
-      activateTab("game");
-    }
-    return;
-  }
-  if (!simWorkerReady) {
-    return;
-  }
-  if (!devToolsBuilt) {
-    buildDevTools();
+  const allow = !IS_PROD_BUILD && devTabShouldBeVisible && simWorkerReady;
+  applyDevTabVisibility({
+    allow,
+    button: devTabBtn,
+    view: devTabView,
+    currentTab,
+    activateTab,
+  });
+  if (allow && !devToolsBuilt) {
+    buildDevTools(devToolsContainer, payload => simWorker.postMessage(payload));
     devToolsBuilt = true;
   }
 }
@@ -799,83 +798,9 @@ function setupSettingsUI() {
   }
 }
 
-function buildDevTools() {
-  if (!devToolsContainer) return;
-  devToolsContainer.innerHTML = '';
-
-  const note = document.createElement('p');
-  note.className = 'settings-note';
-  note.textContent = 'Developer shortcuts. Cheats apply instantly and save immediately.';
-  devToolsContainer.appendChild(note);
-
-  const stringsField = document.createElement('div');
-  stringsField.className = 'dev-field';
-
-  const stringsLabel = document.createElement('label');
-  stringsLabel.htmlFor = 'dev-add-strings';
-  stringsLabel.textContent = 'Add Strings';
-
-  const stringsInput = document.createElement('input');
-  stringsInput.type = 'text';
-  stringsInput.id = 'dev-add-strings';
-  stringsInput.placeholder = 'e.g. 1e30';
-
-  const stringsBtn = document.createElement('button');
-  stringsBtn.type = 'button';
-  stringsBtn.textContent = 'Grant';
-  stringsBtn.addEventListener('click', () => {
-    const raw = stringsInput.value.trim();
-    if (!raw) return;
-    try {
-      const amount = new Decimal(raw);
-      if (amount.lessThanOrEqualTo(0)) return;
-      simWorker.postMessage({ type: 'action', action: 'devAddStrings', amount: amount.toString() });
-    } catch {
-      console.warn('Invalid string grant amount');
-    }
-  });
-
-  stringsField.append(stringsLabel, stringsInput, stringsBtn);
-  devToolsContainer.appendChild(stringsField);
-
-  const gensField = document.createElement('div');
-  gensField.className = 'dev-field';
-
-  const gensLabel = document.createElement('label');
-  gensLabel.textContent = 'Add Generators';
-  gensLabel.htmlFor = 'dev-add-gens';
-
-  const tierSelect = document.createElement('select');
-  tierSelect.id = 'dev-add-gens-tier';
-  GEN_CFG.forEach(cfg => {
-    const option = document.createElement('option');
-    option.value = String(cfg.tier);
-    option.textContent = cfg.name;
-    tierSelect.appendChild(option);
-  });
-
-  const gensInput = document.createElement('input');
-  gensInput.type = 'number';
-  gensInput.id = 'dev-add-gens';
-  gensInput.min = '1';
-  gensInput.step = '1';
-  gensInput.value = '1';
-
-  const gensBtn = document.createElement('button');
-  gensBtn.type = 'button';
-  gensBtn.textContent = 'Grant';
-  gensBtn.addEventListener('click', () => {
-    const tier = Number(tierSelect.value);
-    const amount = Math.floor(Number(gensInput.value));
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    simWorker.postMessage({ type: 'action', action: 'devAddGenerators', tier, amount });
-  });
-
-  gensField.append(gensLabel, tierSelect, gensInput, gensBtn);
-  devToolsContainer.appendChild(gensField);
-}
 
 // Build generator rows dynamically
+
 type RowRefs = {
   row: HTMLDivElement;
   name: HTMLSpanElement;
@@ -885,47 +810,6 @@ type RowRefs = {
   nextCost: HTMLSpanElement;
   buy1: HTMLButtonElement;
 };
-
-type BraidPathRefs = {
-  multiplier: HTMLSpanElement;
-  targets: HTMLSpanElement;
-};
-
-function describeChainTargets(tiers: readonly number[]): string {
-  const gens = tiers.map(tier => tier + 1);
-  return `Boosts Gen ${gens.join(', ')}`;
-}
-
-function buildBraidPathRows(): BraidPathRefs[] {
-  if (!braidPathsContainer) return [];
-  braidPathsContainer.innerHTML = '';
-  return BRAID_PATHS.map((tiers, index) => {
-    const row = document.createElement('div');
-    row.className = 'braid-path-row';
-
-    const info = document.createElement('div');
-    info.className = 'braid-path-info';
-
-    const label = document.createElement('div');
-    label.className = 'braid-path-label';
-    label.textContent = `Chain ${index + 1} (Gen ${tiers.map(t => t + 1).join(', ')})`;
-
-    const targets = document.createElement('div');
-    //DO NOT REMOVE THIS COMMENT: Too much text
-    //targets.className = 'braid-path-targets';
-    //targets.textContent = describeChainTargets(tiers);
-
-    info.append(label, targets);
-
-    const multiplier = document.createElement('span');
-    multiplier.className = 'braid-path-mult';
-    multiplier.textContent = '×1.000';
-
-    row.append(info, multiplier);
-    braidPathsContainer.appendChild(row);
-    return { multiplier, targets };
-  });
-}
 
 function makeRow(tier: number): RowRefs {
   const cfg = GEN_CFG[tier];
@@ -975,7 +859,6 @@ const rows: RowRefs[] = [];
 
 let braidRows: BraidPathRefs[] = [];
 
-const BRAID_BASE_LOG10 = BRAID_CHAIN_BASE.log10();
 
 const simWorker = new Worker(new URL('./simWorker.ts', import.meta.url), { type: 'module' });
 simWorkerReady = true;
@@ -1028,55 +911,27 @@ function format(d: Dec): string {
   return d.toNumber().toExponential(3);
 }
 
-function formatMultiplier(mult: Dec): string {
-  if (mult.lessThan(1000)) {
-    const num = mult.toNumber();
-    const digits = mult.lessThan(1.1) ? 3 : 2;
-    return num.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  }
-  return format(mult);
-}
-
-function formatChainDisplay(mult: Dec): string {
-  if (mult.lessThanOrEqualTo(0)) return '×1.000';
-  const exponent = BRAID_BASE_LOG10.equals(0) ? new Decimal(0) : mult.log10().div(BRAID_BASE_LOG10);
-  const expNum = exponent.toNumber();
-  const expText = Number.isFinite(expNum) ? expNum.toFixed(3) : exponent.toString();
-  const baseText = BRAID_CHAIN_BASE.toNumber().toFixed(2);
-  return `${baseText}^${expText} (×${formatMultiplier(mult)})`;
-}
-
-function renderBraidPanel() {
-  if (!state.braid || !braidPanel) return;
-  const unlocked = state.braid.unlocked;
-  braidPanel.hidden = !unlocked;
-  if (!unlocked) {
-    if (braidResetBtn) braidResetBtn.disabled = true;
-    return;
-  }
+function renderBraidSection() {
+  if (!braidPanel) return;
   if (!braidRows.length) {
-    braidRows = buildBraidPathRows();
+    braidRows = buildBraidPathRows(braidPathsContainer);
   }
-  if (braidBestEl) braidBestEl.textContent = format(state.braid.bestStrings);
-  if (braidLastEl) braidLastEl.textContent = format(state.braid.lastResetStrings);
-  if (braidCountEl) braidCountEl.textContent = state.braid.resets.toLocaleString();
-  if (braidResetBtn) {
-    const canReset = state.braid.unlocked && state.strings.greaterThan(0) && state.strings.greaterThanOrEqualTo(state.braid.bestStrings);
-    braidResetBtn.disabled = !canReset;
-  }
-  braidRows.forEach((row, idx) => {
-    const path = BRAID_PATHS[idx];
-    const referenceTier = path && path.length > 0 ? path[0] : idx;
-    const multiplier = braidChainMultiplier(state, referenceTier);
-    if (!row || !multiplier) return;
-    row.multiplier.textContent = formatChainDisplay(multiplier);
+  renderBraidPanel({
+    state,
+    panel: braidPanel,
+    resetButton: braidResetBtn,
+    refs: braidRows,
+    bestEl: braidBestEl,
+    lastEl: braidLastEl,
+    countEl: braidCountEl,
+    formatNumber: format,
   });
 }
 
 // ---- render ----
 function render() {
-  if (statsActive) {
-    renderStats();
+  if (statsActive && statsContainer) {
+    renderStatsView(state, statsContainer, format);
   }
 
   stringsEl.textContent = format(state.strings);
@@ -1084,7 +939,7 @@ function render() {
     stringsPerSecEl.textContent = format(stringsPerSecond);
   }
 
-  renderBraidPanel();
+  renderBraidSection();
 
   for (let t = 0; t < GEN_CFG.length; t++) {
     const cfg = GEN_CFG[t];
@@ -1117,8 +972,8 @@ function activateTab(name: TabName) {
   currentTab = name;
   // only render stats when Stats tab is activated
   statsActive = name === "stats";
-  if (statsActive) {
-    queueMicrotask(() => renderStats());
+  if (statsActive && statsContainer) {
+    queueMicrotask(() => renderStatsView(state, statsContainer, format));
   }
 }
 
@@ -1130,67 +985,6 @@ tabButtons.forEach(btn => {
 });
 
 
-export function renderStats() {
-  const root = document.getElementById('stats-container');
-  if (!root) {
-    console.warn('renderStats: #stats-container not found');
-    return;
-  }
-
-  if (!statsActive) {
-    return;
-  }
-
-  try {
-    // Safe stringify for Decimal/break_infinity values
-    const toStr = (v: any) =>
-      v == null ? '—'
-      : typeof v === 'string' ? v
-      : typeof v === 'number' ? v.toLocaleString()
-      : typeof v.toString === 'function' ? v.toString()
-      : String(v);
-
-    const { days, hours, minutes, seconds } = timePlayed(state);  // must not throw
-    const { totalUnits, totalBought, highestTier } = aggregateStats(state); // must not throw
-
-    const timeParts: string[] = [];
-    if (days) timeParts.push(`${days}d`);
-    if (hours || timeParts.length) timeParts.push(`${hours}h`);
-    if (minutes || timeParts.length) timeParts.push(`${minutes}m`);
-    timeParts.push(`${seconds}s`);
-    const timeString = timeParts.join(' ');
-
-    const rows: Array<[string, string]> = [
-      ['Time Played', timeString],
-      ['Total Strings Produced', format(state.totalStringsProduced)],
-      ['Strings Owned', format(state.strings)],
-      ['Total Purchases', (typeof totalBought === 'number' ? totalBought.toLocaleString() : toStr(totalBought))],
-      ['Highest Active Tier', highestTier >= 0 ? `Gen${highestTier + 1}` : 'None'],
-    ];
-
-    // minimal skeleton in case CSS is missing
-    if (!document.getElementById('stats-row-css')) {
-      const style = document.createElement('style');
-      style.id = 'stats-row-css';
-      style.textContent = `
-        .stat-row { display:flex; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid rgba(120,140,200,.2); }
-        .stat-row:last-child { border-bottom: 0; }
-        .stat-label { opacity:.75; text-transform:uppercase; letter-spacing:.06em; font-size:.85rem; }
-        .stat-value { font-weight:600; }
-      `;
-      document.head.appendChild(style);
-    }
-
-    root.innerHTML = rows
-      .map(([label, value]) =>
-        `<div class="stat-row"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`
-      )
-      .join('');
-  } catch (err) {
-    console.error('renderStats failed:', err);
-    root.textContent = 'Failed to render stats (see console).';
-  }
-}
 
 simWorker.addEventListener("message", event => {
   const msg = event.data;
