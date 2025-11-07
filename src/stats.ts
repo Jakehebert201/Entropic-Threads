@@ -84,7 +84,11 @@ export function renderStats(state: GameState) {
   root.innerHTML = `
     <div class="stats">
       <div class="stat">
-        <span>Total Strings</span>
+        <span>Total Strings Produced</span>
+        <span class="stat-value">${formatDecimal(state.totalStringsProduced)}</span>
+      </div>
+      <div class="stat">
+        <span>Strings Owned</span>
         <span class="stat-value">${formatDecimal(state.strings)}</span>
       </div>
       <div class="stat">

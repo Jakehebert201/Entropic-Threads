@@ -94,6 +94,7 @@ export type SerializedGameState = {
   lastTick: number;
   created: number;
   braid: SerializedBraidState;
+  totalStringsProduced: string;
 };
 
 function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGameState {
@@ -107,6 +108,9 @@ function normalizeSerialized(data: Partial<SerializedGameState>): SerializedGame
     lastTick: typeof data.lastTick === 'number' ? data.lastTick : Date.now(),
     created: typeof data.created === 'number' ? data.created : Date.now(),
     braid: normalizeSerializedBraid(data.braid),
+    totalStringsProduced: typeof data.totalStringsProduced === 'string'
+      ? data.totalStringsProduced
+      : String(data.totalStringsProduced ?? '0'),
   };
 }
 
@@ -117,6 +121,7 @@ export function serializeGameState(state: GameState): SerializedGameState {
     lastTick: state.lastTick,
     created: state.created,
     braid: serializeBraidState(state.braid),
+    totalStringsProduced: state.totalStringsProduced.toString(),
   };
 }
 
@@ -134,6 +139,7 @@ export function deserializeGameState(serialized: Partial<SerializedGameState>): 
     lastTick: normalized.lastTick,
     created: normalized.created,
     braid: deserializeBraidState(normalized.braid),
+    totalStringsProduced: new Decimal(normalized.totalStringsProduced),
   };
 }
 
@@ -143,6 +149,7 @@ export type GameState = {
   lastTick: number;
   created: number;
   braid: BraidState;
+  totalStringsProduced: Dec;
 };
 
 export function newState(): GameState {
@@ -152,6 +159,7 @@ export function newState(): GameState {
     lastTick: Date.now(),
     created: Date.now(),
     braid: newBraidState(),
+    totalStringsProduced: new Decimal(0),
   };
 }
 //loading will break time created, how do I fix this?

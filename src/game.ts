@@ -33,6 +33,7 @@ export function tick(s: GameState, dtSeconds: number) {
     const g0Power = PER_PURCHASE_MULT.pow(gen0.bought);      // 2^bought_0
     const chainBonus = braidChainMultiplier(s, 0);
     const baseStrings = gen0.units.mul(cfg0.prodRate.mul(g0Power)).mul(chainBonus).mul(dt);
+    s.totalStringsProduced = s.totalStringsProduced.add(baseStrings);
     s.strings = s.strings.add(baseStrings);
   }
 

@@ -3,7 +3,7 @@ import { loadState, saveState, newState, serializeGameState, deserializeGameStat
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
 import { PER_PURCHASE_MULT, BRAID_PATHS, BRAID_CHAIN_BASE } from "./constants.js";
-import { ensureBraidUnlock, braidChainMultiplier } from "./braid.js";
+import { ensureBraidUnlock, braidChainMultiplier, ensureBraidBase } from "./braid.js";
 import { timePlayed, aggregateStats, } from "./stats.js";
 
 import { getBuildInfo } from "./build-info.js";
@@ -482,7 +482,9 @@ function setupSettingsUI() {
     function applyLoadedSlot(loaded: LoadedSlot, message?: string) {
       const nextState = deserializeGameState(loaded.data);
       state = nextState;
-      if (ensureBraidUnlock(state)) {
+      const unlocked = ensureBraidUnlock(state);
+      const synced = ensureBraidBase(state);
+      if (unlocked || synced) {
         saveState(state);
       }
       resetStringRateTracking(state.strings);
@@ -957,7 +959,9 @@ function makeRow(tier: number): RowRefs {
 }
 
 let state: GameState = loadState();
-if (ensureBraidUnlock(state)) {
+const unlockChanged = ensureBraidUnlock(state);
+const baseSynced = ensureBraidBase(state);
+if (unlockChanged || baseSynced) {
   saveState(state);
 }
 let activeSlot: SaveSlotSummary | null = getActiveSlot();
@@ -1053,7 +1057,8 @@ function renderBraidPanel() {
   if (braidLastEl) braidLastEl.textContent = format(state.braid.lastResetStrings);
   if (braidCountEl) braidCountEl.textContent = state.braid.resets.toLocaleString();
   if (braidResetBtn) {
-    braidResetBtn.disabled = !state.braid.unlocked || !state.strings.greaterThan(0);
+    const canReset = state.braid.unlocked && state.strings.greaterThan(0) && state.strings.greaterThanOrEqualTo(state.braid.bestStrings);
+    braidResetBtn.disabled = !canReset;
   }
   braidRows.forEach((row, idx) => {
     const path = BRAID_PATHS[idx];
@@ -1084,7 +1089,9 @@ function render() {
     if (!cfg || !r || !gen) continue;
     r.units.textContent = format(gen.units);
     r.bought.textContent = String(gen.bought);
-    r.multiplier.textContent = format(PER_PURCHASE_MULT.pow(gen.bought));
+    const braidBonus = braidChainMultiplier(state, t);
+    const totalMult = PER_PURCHASE_MULT.pow(gen.bought).mul(braidBonus);
+    r.multiplier.textContent = format(totalMult);
     r.nextCost.textContent = format(nextCost(cfg, gen.bought));
     // enable/disable buttons based on affordability
     const canBuy = state.strings.greaterThanOrEqualTo(nextCost(cfg, gen.bought));
@@ -1151,7 +1158,8 @@ export function renderStats() {
 
     const rows: Array<[string, string]> = [
       ['Time Played', timeString],
-      ['Strings Owned', toStr(format ? format(state.strings) : toStr(state.strings))],
+      ['Total Strings Produced', format(state.totalStringsProduced)],
+      ['Strings Owned', format(state.strings)],
       ['Total Purchases', (typeof totalBought === 'number' ? totalBought.toLocaleString() : toStr(totalBought))],
       ['Highest Active Tier', highestTier >= 0 ? `Gen${highestTier + 1}` : 'None'],
     ];

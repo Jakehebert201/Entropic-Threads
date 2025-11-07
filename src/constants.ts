@@ -26,9 +26,12 @@ export const BRAID_PATHS = [
   [2, 6, 10],
   [3, 7, 11],
 ] as const;
-export const BRAID_CHAIN_BASE = new Decimal(1.02); // base multiplier applied per chain
-export const BRAID_GAIN_EXPONENT = 0.85;           // exponent for log10(strings) scaling
-export const BRAID_GAIN_DIVISOR = 5;               // higher divisor = slower growth
+export const BRAID_CHAIN_BASE = new Decimal(1.08); // stronger base multiplier per chain
+export const BRAID_GAIN_EXPONENT = 0.9;            // exponent for log10(strings) scaling
+export const BRAID_GAIN_DIVISOR = 2.2;             // higher divisor = slower growth
+export const BRAID_GAIN_OFFSET = 2;                // shifts low-end scaling for earlier impact
+export const BRAID_PURCHASE_BASE = new Decimal(1.0015);  // per-purchase bonus scaling
+export const BRAID_PURCHASE_POWER = 0.65;                // exponent for purchase bonus growth
 export const BRAID_UNLOCK_STRINGS = Decimal.pow(10, 12); // reach 1e12 strings to unlock braiding
 
 // Optional “super-scaling” to stop late-game blowups:
