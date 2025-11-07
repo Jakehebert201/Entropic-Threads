@@ -33,6 +33,7 @@ const D = (x:number | string| Dec) =>
     x instanceof Decimal ? x : new Decimal(x);
 
 const freshSerializedState = (): SerializedGameState => serializeGameState(newState());
+const IS_PROD_BUILD = typeof import.meta !== "undefined" && typeof import.meta.env === "object" && import.meta.env?.PROD === true;
 
 // ---- DOM ----
 const stringsEl = document.getElementById("strings")!;
@@ -224,7 +225,7 @@ let forcedRibbonMode: "show" | "hide" | null = null;
 let defaultRibbonVisible = false;
 let currentBuildInfo: BuildInfo | null = null;
 let updateMiscBuildInfo: (() => void) | null = null;
-let devTabShouldBeVisible = false;
+let devTabShouldBeVisible = !IS_PROD_BUILD;
 let devToolsBuilt = false;
 let simWorkerReady = false;
 let currentTab: TabName = "game";
@@ -269,9 +270,10 @@ function updateDevRibbonDisplay() {
 
 function updateDevTabVisibility() {
   if (!devTabBtn || !devTabView) return;
-  devTabBtn.hidden = !devTabShouldBeVisible;
-  devTabView.hidden = !devTabShouldBeVisible;
-  if (!devTabShouldBeVisible) {
+  const allow = !IS_PROD_BUILD && devTabShouldBeVisible;
+  devTabBtn.hidden = !allow;
+  devTabView.hidden = !allow;
+  if (!allow) {
     if (currentTab === "dev") {
       activateTab("game");
     }
@@ -290,6 +292,7 @@ currentTheme = readStoredTheme();
 applyThemeChoice(currentTheme, false);
 forcedRibbonMode = readRibbonPreference();
 updateDevRibbonDisplay();
+updateDevTabVisibility();
 
 type SettingsTabId = "saving" | "appearance" | "misc";
 type TabName = "game" | "stats" | "settings" | "dev";
@@ -301,7 +304,7 @@ function applyBuildInfo() {
       if (!info) {
         buildInfoFooter.textContent = 'Build info unavailable';
         defaultRibbonVisible = false;
-        devTabShouldBeVisible = false;
+        devTabShouldBeVisible = !IS_PROD_BUILD && devTabShouldBeVisible;
         updateDevRibbonDisplay();
         updateDevTabVisibility();
         if (updateMiscBuildInfo) updateMiscBuildInfo();
@@ -326,7 +329,7 @@ function applyBuildInfo() {
       });
 
       defaultRibbonVisible = info.env !== 'production';
-      devTabShouldBeVisible = info.env !== 'production';
+      devTabShouldBeVisible = !IS_PROD_BUILD && info.env !== 'production';
       updateDevRibbonDisplay();
       updateDevTabVisibility();
       if (updateMiscBuildInfo) updateMiscBuildInfo();
@@ -335,7 +338,7 @@ function applyBuildInfo() {
       currentBuildInfo = null;
       buildInfoFooter.textContent = 'Build info unavailable';
       defaultRibbonVisible = false;
-      devTabShouldBeVisible = false;
+      devTabShouldBeVisible = !IS_PROD_BUILD && devTabShouldBeVisible;
       updateDevRibbonDisplay();
       updateDevTabVisibility();
       if (updateMiscBuildInfo) updateMiscBuildInfo();
@@ -908,8 +911,9 @@ function buildBraidPathRows(): BraidPathRefs[] {
     label.textContent = `Chain ${index + 1} (Gen ${tiers.map(t => t + 1).join(', ')})`;
 
     const targets = document.createElement('div');
-    targets.className = 'braid-path-targets';
-    targets.textContent = describeChainTargets(tiers);
+    //DO NOT REMOVE THIS COMMENT: Too much text
+    //targets.className = 'braid-path-targets';
+    //targets.textContent = describeChainTargets(tiers);
 
     info.append(label, targets);
 

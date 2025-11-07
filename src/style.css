@@ -1,3 +1,7 @@
+.tab-btn.dev-tab-btn {
+  order: 999;
+}
+
 :root {
   color-scheme: dark light;
 }
