@@ -19,15 +19,22 @@ Entropic Threads is an incremental game powered by TypeScript + Vite and driven 
 - **UI clarity:** settings, stats, and build info surface critical context without leaving the play screen.
 
 ### Braiding Math
-You unlock the braiding panel after your run reaches 1e12 strings, and once revealed it stays available permanently for that save. The 12 generators are split into four alternating chains (Gen1/5/9, Gen2/6/10, Gen3/7/11, Gen4/8/12). Hitting the **Braid Reset** button wipes your strings and generators, but it banks the highest string total from that run and turns it into a gentle multiplier that applies to every generator inside each chain.
+You unlock the braiding panel after your run reaches roughly `1e12` strings, and once revealed it stays available permanently for that save. The 12 generators are split into four alternating chains (Gen1/5/9, Gen2/6/10, Gen3/7/11, Gen4/8/12). Hitting the **Braid Reset** button wipes your strings and generators, but it banks the highest string total from that run and turns it into a multiplier that permanently buffs every generator inside each chain.
+
+Prestige power (from your best strings) and per-chain purchases stack multiplicatively:
 
 ```ts
-const log = Math.log10(Math.max(1, totalStrings));
-const exponent = Math.pow(log, 0.85) / 5;
-const chainMultiplier = 1.02 ** exponent;
+const log = Math.log10(Math.max(1, bestStrings));
+const prestigeExp = (Math.pow(log + 2, 0.9) - Math.pow(2, 0.9)) / 2.2;
+const prestigeBonus = 1.08 ** prestigeExp; // shared by all chains
+
+const chainPurchases = totalBuysInChain;       // e.g. Gen1 + Gen5 + Gen9 buys
+const purchaseBonus = 1.0015 ** Math.pow(chainPurchases, 0.65);
+
+const chainMultiplier = prestigeBonus * purchaseBonus;
 ```
 
-Only the generators that belong to a given chain receive the bonus, but the multiplier persists forever and grows with your best strings on reset.
+Only the generators that belong to a given chain receive its multiplier, but the bonus persists forever and grows whenever you beat your previous best-string record. Purchases made after a braid reset also nudge that chain’s multiplier upward during the run, rewarding active play until the next prestige.
 ### ROADMAP
  **Layer Outline**
 
