@@ -19,14 +19,15 @@ Entropic Threads is an incremental game powered by TypeScript + Vite and driven 
 - **UI clarity:** settings, stats, and build info surface critical context without leaving the play screen.
 
 ### Braiding Math
-Braiding converts generator purchases into a diminishing-return multiplier on strings. Every `BRAID_SIZE` purchases across tiers counts as a “strand”:
+You unlock the braiding panel after your run reaches 1e12 strings, and once revealed it stays available permanently for that save. The 12 generators are split into four alternating chains (Gen1/5/9, Gen2/6/10, Gen3/7/11, Gen4/8/12). Hitting the **Braid Reset** button wipes your strings and generators, but it banks the highest string total from that run and turns it into a gentle multiplier that applies to every generator inside each chain.
 
 ```ts
-const strands = sum(gens.map(g => Math.floor(g.bought / BRAID_SIZE)));
-const braidMultiplier = BRAID_BASE.pow(Math.pow(strands, 0.7));
+const log = Math.log10(Math.max(1, totalStrings));
+const exponent = Math.pow(log, 0.85) / 5;
+const chainMultiplier = 1.02 ** exponent;
 ```
 
-With the current tuning (`BRAID_BASE = 2`, `BRAID_SIZE = 25`), each bundle of 25 purchases contributes roughly `2^(strands^0.7)` to string production.
+Only the generators that belong to a given chain receive the bonus, but the multiplier persists forever and grows with your best strings on reset.
 ### ROADMAP
  **Layer Outline**
 

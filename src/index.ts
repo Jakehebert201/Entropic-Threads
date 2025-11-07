@@ -2,7 +2,8 @@ import Decimal from "break_eternity.js";
 import { loadState, saveState, newState, serializeGameState, deserializeGameState, type GameState, type SerializedGameState } from "./state.js";
 import { GEN_CFG } from "./generators.js";
 import { nextCost } from "./economy.js";
-import { PER_PURCHASE_MULT } from "./constants.js";
+import { PER_PURCHASE_MULT, BRAID_PATHS, BRAID_CHAIN_BASE } from "./constants.js";
+import { ensureBraidUnlock, braidChainMultiplier } from "./braid.js";
 import { timePlayed, aggregateStats, } from "./stats.js";
 
 import { getBuildInfo } from "./build-info.js";
@@ -39,6 +40,16 @@ const stringsPerSecEl = document.getElementById("strings-ps") as HTMLSpanElement
 const gensContainer = document.getElementById("gens")!;
 const settingsContainer = document.getElementById("settings-container") as HTMLDivElement | null;
 const maxAllBtn = document.getElementById("max-all") as HTMLButtonElement | null;
+const braidPanel = document.getElementById("braid-panel") as HTMLDivElement | null;
+const devTabBtn = document.getElementById("dev-tab-btn") as HTMLButtonElement | null;
+const devTabView = document.getElementById("tab-dev") as HTMLElement | null;
+const devToolsContainer = document.getElementById("dev-tools") as HTMLDivElement | null;
+
+const braidResetBtn = document.getElementById("braid-reset") as HTMLButtonElement | null;
+const braidBestEl = document.getElementById("braid-best") as HTMLSpanElement | null;
+const braidLastEl = document.getElementById("braid-last") as HTMLSpanElement | null;
+const braidCountEl = document.getElementById("braid-count") as HTMLSpanElement | null;
+const braidPathsContainer = document.getElementById("braid-paths") as HTMLDivElement | null;
 
 const buildInfoFooter = document.createElement("div");
 buildInfoFooter.id = "build-info-footer";
@@ -213,6 +224,10 @@ let forcedRibbonMode: "show" | "hide" | null = null;
 let defaultRibbonVisible = false;
 let currentBuildInfo: BuildInfo | null = null;
 let updateMiscBuildInfo: (() => void) | null = null;
+let devTabShouldBeVisible = false;
+let devToolsBuilt = false;
+let simWorkerReady = false;
+let currentTab: TabName = "game";
 
 function readRibbonPreference(): "show" | "hide" | null {
   if (typeof window === "undefined") return null;
@@ -252,12 +267,32 @@ function updateDevRibbonDisplay() {
   devRibbon.style.display = defaultRibbonVisible ? "block" : "none";
 }
 
+function updateDevTabVisibility() {
+  if (!devTabBtn || !devTabView) return;
+  devTabBtn.hidden = !devTabShouldBeVisible;
+  devTabView.hidden = !devTabShouldBeVisible;
+  if (!devTabShouldBeVisible) {
+    if (currentTab === "dev") {
+      activateTab("game");
+    }
+    return;
+  }
+  if (!simWorkerReady) {
+    return;
+  }
+  if (!devToolsBuilt) {
+    buildDevTools();
+    devToolsBuilt = true;
+  }
+}
+
 currentTheme = readStoredTheme();
 applyThemeChoice(currentTheme, false);
 forcedRibbonMode = readRibbonPreference();
 updateDevRibbonDisplay();
 
 type SettingsTabId = "saving" | "appearance" | "misc";
+type TabName = "game" | "stats" | "settings" | "dev";
 
 function applyBuildInfo() {
   getBuildInfo()
@@ -266,7 +301,9 @@ function applyBuildInfo() {
       if (!info) {
         buildInfoFooter.textContent = 'Build info unavailable';
         defaultRibbonVisible = false;
+        devTabShouldBeVisible = false;
         updateDevRibbonDisplay();
+        updateDevTabVisibility();
         if (updateMiscBuildInfo) updateMiscBuildInfo();
         return;
       }
@@ -289,14 +326,18 @@ function applyBuildInfo() {
       });
 
       defaultRibbonVisible = info.env !== 'production';
+      devTabShouldBeVisible = info.env !== 'production';
       updateDevRibbonDisplay();
+      updateDevTabVisibility();
       if (updateMiscBuildInfo) updateMiscBuildInfo();
     })
     .catch(() => {
       currentBuildInfo = null;
       buildInfoFooter.textContent = 'Build info unavailable';
       defaultRibbonVisible = false;
+      devTabShouldBeVisible = false;
       updateDevRibbonDisplay();
+      updateDevTabVisibility();
       if (updateMiscBuildInfo) updateMiscBuildInfo();
     });
 }
@@ -441,6 +482,9 @@ function setupSettingsUI() {
     function applyLoadedSlot(loaded: LoadedSlot, message?: string) {
       const nextState = deserializeGameState(loaded.data);
       state = nextState;
+      if (ensureBraidUnlock(state)) {
+        saveState(state);
+      }
       resetStringRateTracking(state.strings);
       render();
       const serialized = serializeGameState(state);
@@ -750,6 +794,82 @@ function setupSettingsUI() {
   }
 }
 
+function buildDevTools() {
+  if (!devToolsContainer) return;
+  devToolsContainer.innerHTML = '';
+
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent = 'Developer shortcuts. Cheats apply instantly and save immediately.';
+  devToolsContainer.appendChild(note);
+
+  const stringsField = document.createElement('div');
+  stringsField.className = 'dev-field';
+
+  const stringsLabel = document.createElement('label');
+  stringsLabel.htmlFor = 'dev-add-strings';
+  stringsLabel.textContent = 'Add Strings';
+
+  const stringsInput = document.createElement('input');
+  stringsInput.type = 'text';
+  stringsInput.id = 'dev-add-strings';
+  stringsInput.placeholder = 'e.g. 1e30';
+
+  const stringsBtn = document.createElement('button');
+  stringsBtn.type = 'button';
+  stringsBtn.textContent = 'Grant';
+  stringsBtn.addEventListener('click', () => {
+    const raw = stringsInput.value.trim();
+    if (!raw) return;
+    try {
+      const amount = new Decimal(raw);
+      if (amount.lessThanOrEqualTo(0)) return;
+      simWorker.postMessage({ type: 'action', action: 'devAddStrings', amount: amount.toString() });
+    } catch {
+      console.warn('Invalid string grant amount');
+    }
+  });
+
+  stringsField.append(stringsLabel, stringsInput, stringsBtn);
+  devToolsContainer.appendChild(stringsField);
+
+  const gensField = document.createElement('div');
+  gensField.className = 'dev-field';
+
+  const gensLabel = document.createElement('label');
+  gensLabel.textContent = 'Add Generators';
+  gensLabel.htmlFor = 'dev-add-gens';
+
+  const tierSelect = document.createElement('select');
+  tierSelect.id = 'dev-add-gens-tier';
+  GEN_CFG.forEach(cfg => {
+    const option = document.createElement('option');
+    option.value = String(cfg.tier);
+    option.textContent = cfg.name;
+    tierSelect.appendChild(option);
+  });
+
+  const gensInput = document.createElement('input');
+  gensInput.type = 'number';
+  gensInput.id = 'dev-add-gens';
+  gensInput.min = '1';
+  gensInput.step = '1';
+  gensInput.value = '1';
+
+  const gensBtn = document.createElement('button');
+  gensBtn.type = 'button';
+  gensBtn.textContent = 'Grant';
+  gensBtn.addEventListener('click', () => {
+    const tier = Number(tierSelect.value);
+    const amount = Math.floor(Number(gensInput.value));
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    simWorker.postMessage({ type: 'action', action: 'devAddGenerators', tier, amount });
+  });
+
+  gensField.append(gensLabel, tierSelect, gensInput, gensBtn);
+  devToolsContainer.appendChild(gensField);
+}
+
 // Build generator rows dynamically
 type RowRefs = {
   row: HTMLDivElement;
@@ -760,6 +880,46 @@ type RowRefs = {
   nextCost: HTMLSpanElement;
   buy1: HTMLButtonElement;
 };
+
+type BraidPathRefs = {
+  multiplier: HTMLSpanElement;
+  targets: HTMLSpanElement;
+};
+
+function describeChainTargets(tiers: readonly number[]): string {
+  const gens = tiers.map(tier => tier + 1);
+  return `Boosts Gen ${gens.join(', ')}`;
+}
+
+function buildBraidPathRows(): BraidPathRefs[] {
+  if (!braidPathsContainer) return [];
+  braidPathsContainer.innerHTML = '';
+  return BRAID_PATHS.map((tiers, index) => {
+    const row = document.createElement('div');
+    row.className = 'braid-path-row';
+
+    const info = document.createElement('div');
+    info.className = 'braid-path-info';
+
+    const label = document.createElement('div');
+    label.className = 'braid-path-label';
+    label.textContent = `Chain ${index + 1} (Gen ${tiers.map(t => t + 1).join(', ')})`;
+
+    const targets = document.createElement('div');
+    targets.className = 'braid-path-targets';
+    targets.textContent = describeChainTargets(tiers);
+
+    info.append(label, targets);
+
+    const multiplier = document.createElement('span');
+    multiplier.className = 'braid-path-mult';
+    multiplier.textContent = '×1.000';
+
+    row.append(info, multiplier);
+    braidPathsContainer.appendChild(row);
+    return { multiplier, targets };
+  });
+}
 
 function makeRow(tier: number): RowRefs {
   const cfg = GEN_CFG[tier];
@@ -797,12 +957,21 @@ function makeRow(tier: number): RowRefs {
 }
 
 let state: GameState = loadState();
+if (ensureBraidUnlock(state)) {
+  saveState(state);
+}
 let activeSlot: SaveSlotSummary | null = getActiveSlot();
 let autosaveIntervalMs = getAutosaveInterval();
 resetStringRateTracking(state.strings);
 const rows: RowRefs[] = [];
 
+let braidRows: BraidPathRefs[] = [];
+
+const BRAID_BASE_LOG10 = BRAID_CHAIN_BASE.log10();
+
 const simWorker = new Worker(new URL('./simWorker.ts', import.meta.url), { type: 'module' });
+simWorkerReady = true;
+updateDevTabVisibility();
 const initialOfflineSeconds = Math.max(0, (Date.now() - state.lastTick) / 1000);
 let lastSaveTimestamp = performance.now();
 
@@ -819,6 +988,12 @@ setupSettingsUI();
 if (maxAllBtn) {
   maxAllBtn.addEventListener("click", () => {
     simWorker.postMessage({ type: "action", action: "buyMaxAll" });
+  });
+}
+
+if (braidResetBtn) {
+  braidResetBtn.addEventListener('click', () => {
+    simWorker.postMessage({ type: 'action', action: 'braidReset' });
   });
 }
 //#region keybindings;
@@ -845,6 +1020,50 @@ function format(d: Dec): string {
   return d.toNumber().toExponential(3);
 }
 
+function formatMultiplier(mult: Dec): string {
+  if (mult.lessThan(1000)) {
+    const num = mult.toNumber();
+    const digits = mult.lessThan(1.1) ? 3 : 2;
+    return num.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  }
+  return format(mult);
+}
+
+function formatChainDisplay(mult: Dec): string {
+  if (mult.lessThanOrEqualTo(0)) return '×1.000';
+  const exponent = BRAID_BASE_LOG10.equals(0) ? new Decimal(0) : mult.log10().div(BRAID_BASE_LOG10);
+  const expNum = exponent.toNumber();
+  const expText = Number.isFinite(expNum) ? expNum.toFixed(3) : exponent.toString();
+  const baseText = BRAID_CHAIN_BASE.toNumber().toFixed(2);
+  return `${baseText}^${expText} (×${formatMultiplier(mult)})`;
+}
+
+function renderBraidPanel() {
+  if (!state.braid || !braidPanel) return;
+  const unlocked = state.braid.unlocked;
+  braidPanel.hidden = !unlocked;
+  if (!unlocked) {
+    if (braidResetBtn) braidResetBtn.disabled = true;
+    return;
+  }
+  if (!braidRows.length) {
+    braidRows = buildBraidPathRows();
+  }
+  if (braidBestEl) braidBestEl.textContent = format(state.braid.bestStrings);
+  if (braidLastEl) braidLastEl.textContent = format(state.braid.lastResetStrings);
+  if (braidCountEl) braidCountEl.textContent = state.braid.resets.toLocaleString();
+  if (braidResetBtn) {
+    braidResetBtn.disabled = !state.braid.unlocked || !state.strings.greaterThan(0);
+  }
+  braidRows.forEach((row, idx) => {
+    const path = BRAID_PATHS[idx];
+    const referenceTier = path && path.length > 0 ? path[0] : idx;
+    const multiplier = braidChainMultiplier(state, referenceTier);
+    if (!row || !multiplier) return;
+    row.multiplier.textContent = formatChainDisplay(multiplier);
+  });
+}
+
 // ---- render ----
 function render() {
   if (statsActive) {
@@ -855,6 +1074,8 @@ function render() {
   if (stringsPerSecEl) {
     stringsPerSecEl.textContent = format(stringsPerSecond);
   }
+
+  renderBraidPanel();
 
   for (let t = 0; t < GEN_CFG.length; t++) {
     const cfg = GEN_CFG[t];
@@ -876,12 +1097,13 @@ const tabViews   = document.querySelectorAll<HTMLElement>(".tab-view");
 
 let statsActive = false;
 
-function activateTab(name: "game" | "stats") {
+function activateTab(name: TabName) {
   // highlight the active button
   tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
   // show the correct tab view
   tabViews.forEach(v => v.classList.toggle("active", v.id === `tab-${name}`));
 
+  currentTab = name;
   // only render stats when Stats tab is activated
   statsActive = name === "stats";
   if (statsActive) {
@@ -891,7 +1113,7 @@ function activateTab(name: "game" | "stats") {
 
 tabButtons.forEach(btn => {
   btn.addEventListener("click", () => {
-    const name = (btn.dataset.tab as "game" | "stats") ?? "game";
+    const name = (btn.dataset.tab as TabName) ?? "game";
     activateTab(name);
   });
 });

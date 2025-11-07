@@ -1,6 +1,18 @@
 import Decimal from "break_eternity.js";
 import type { GameState } from "./state.js";
 
+function formatDecimal(value: Decimal): string {
+  if (value.lessThan(1e6)) {
+    return value.toNumber().toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  // @ts-ignore
+  if (typeof value.mantissa === 'number' && typeof value.exponent === 'number') {
+    // @ts-ignore
+    return `${value.mantissa.toFixed(3)}e${value.exponent}`;
+  }
+  return value.toString();
+}
+
 export function timePlayedMs(state: GameState, now = Date.now()): number {
   const created = state.created ?? now;
   return Math.max(0, now - created);
@@ -73,7 +85,7 @@ export function renderStats(state: GameState) {
     <div class="stats">
       <div class="stat">
         <span>Total Strings</span>
-        <span class="stat-value">${fmt(Number(state.strings.toString()))}</span>
+        <span class="stat-value">${formatDecimal(state.strings)}</span>
       </div>
       <div class="stat">
         <span>Time Played</span>
@@ -84,6 +96,14 @@ export function renderStats(state: GameState) {
         <span class="stat-value">${
           state.gens.reduce((sum, g) => sum + Number(g.units.toString()), 0).toLocaleString()
         }</span>
+      </div>
+      <div class="stat">
+        <span>Best Braid Strings</span>
+        <span class="stat-value">${formatDecimal(state.braid.bestStrings)}</span>
+      </div>
+      <div class="stat">
+        <span>Braid Resets</span>
+        <span class="stat-value">${state.braid.resets.toLocaleString()}</span>
       </div>
     </div>
   `;

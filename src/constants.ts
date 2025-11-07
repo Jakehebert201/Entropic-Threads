@@ -19,9 +19,17 @@ const COST_RATIOS = Array.from(
 export const PROD_STRINGS_PER_GEN1 = new Decimal(2);
 export const PROD_CHAIN_PER_TIER   = new Decimal(0.05); // was 0.2
 
-// Braiding: gentler & with diminishing returns
-export const BRAID_SIZE = 25;                 // every 25 buys per tier = 1 strand
-export const BRAID_BASE = new Decimal(2.0);   // 2× per strand (was 10×)
+// Braiding chains: four alternating paths across the 12 generators
+export const BRAID_PATHS = [
+  [0, 4, 8],
+  [1, 5, 9],
+  [2, 6, 10],
+  [3, 7, 11],
+] as const;
+export const BRAID_CHAIN_BASE = new Decimal(1.02); // base multiplier applied per chain
+export const BRAID_GAIN_EXPONENT = 0.85;           // exponent for log10(strings) scaling
+export const BRAID_GAIN_DIVISOR = 5;               // higher divisor = slower growth
+export const BRAID_UNLOCK_STRINGS = Decimal.pow(10, 12); // reach 1e12 strings to unlock braiding
 
 // Optional “super-scaling” to stop late-game blowups:
 // after this many buys on a tier, add an extra factor per buy.

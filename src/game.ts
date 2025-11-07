@@ -1,8 +1,9 @@
 import Decimal from "break_eternity.js";
 import { GEN_CFG } from "./generators.js";
 import type { GeneratorConfig } from "./generators.js";
-import { braidMultiplier, nextCost, totalCostFor } from "./economy.js";
+import { nextCost, totalCostFor } from "./economy.js";
 import { SUPER_START, SUPER_STEP, costMultForTier, PER_PURCHASE_MULT } from "./constants.js";
+import { braidChainMultiplier, applyBraidReset, ensureBraidUnlock } from "./braid.js";
 import type { GameState } from "./state.js";
 import { saveState } from "./state.js";
 
@@ -18,21 +19,26 @@ export function tick(s: GameState, dtSeconds: number) {
     if (!gen || !cfg || !lower) continue;
 
     const power = PER_PURCHASE_MULT.pow(gen.bought);         // 2^bought_i
-    const effRate = cfg.prodRate.mul(power);              // boosted rate for this tier
+    const chainBonus = braidChainMultiplier(s, i);
+    const effRate = cfg.prodRate.mul(power).mul(chainBonus); // boosted rate for this tier plus braid
     const produced = gen.units.mul(effRate).mul(dt);
 
     lower.units = lower.units.add(produced);
   }
 
-  // Strings from Gen1 (also boosted by its own purchases), then braid multiplier.
+  // Strings from Gen1 (also boosted by its own purchases) plus its braid chain multiplier.
   const gen0 = s.gens[0];
   const cfg0 = GEN_CFG[0];
   if (gen0 && cfg0) {
     const g0Power = PER_PURCHASE_MULT.pow(gen0.bought);      // 2^bought_0
-    const baseStrings = gen0.units.mul(cfg0.prodRate.mul(g0Power)).mul(dt);
-    s.strings = s.strings.add(baseStrings.mul(braidMultiplier(s)));
+    const chainBonus = braidChainMultiplier(s, 0);
+    const baseStrings = gen0.units.mul(cfg0.prodRate.mul(g0Power)).mul(chainBonus).mul(dt);
+    s.strings = s.strings.add(baseStrings);
   }
 
+  if (ensureBraidUnlock(s)) {
+    saveState(s);
+  }
 }
 
 export function buyOne(s: GameState, tier: number): boolean {
@@ -97,6 +103,37 @@ export function buyMaxAll(s: GameState): boolean {
   }
   if (purchased) saveState(s);
   return purchased;
+}
+
+export function grantStrings(s: GameState, rawAmount: Decimal | number | string): boolean {
+  let amount: Decimal;
+  try {
+    amount = new Decimal(rawAmount);
+  } catch {
+    return false;
+  }
+  if (amount.lessThanOrEqualTo(0)) return false;
+  s.strings = s.strings.add(amount);
+  saveState(s);
+  return true;
+}
+
+export function grantGenerators(s: GameState, tier: number, rawCount: number | string): boolean {
+  const gen = s.gens[tier];
+  if (!gen) return false;
+  const count = Math.floor(Number(rawCount));
+  if (!Number.isFinite(count) || count <= 0) return false;
+  const delta = new Decimal(count);
+  gen.units = gen.units.add(delta);
+  gen.bought += count;
+  saveState(s);
+  return true;
+}
+
+export function braidReset(s: GameState): boolean {
+  const changed = applyBraidReset(s);
+  if (changed) saveState(s);
+  return changed;
 }
 
 // -------- internals --------

@@ -1,8 +1,6 @@
 import Decimal from "break_eternity.js";
-import type { GameState } from "./state.js";
 import type { GeneratorConfig } from "./generators.js";
 import {
-  BRAID_BASE, BRAID_SIZE,
   SUPER_START, SUPER_STEP,
   costMultForTier
 } from "./constants.js";
@@ -25,16 +23,3 @@ export function totalCostFor(cfg: GeneratorConfig, bought: number, n: number): D
   return total;
 }
 
-// count braid strands from purchases (every BRAID_SIZE buys per tier)
-export function braidStrands(s: GameState): number {
-    let sum = 0;
-    for (const g of s.gens) sum += Math.floor(g.bought / BRAID_SIZE);
-    return sum;
-  }
-  
-  // diminishing-returns braid: BRAID_BASE^(strands^0.7)
-export function braidMultiplier(s: GameState): Decimal {
-  const strands = braidStrands(s);
-  if (strands <= 0) return new Decimal(1);
-  return BRAID_BASE.pow(Math.pow(strands, 0.7));
-}

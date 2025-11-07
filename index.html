@@ -16,6 +16,7 @@
         <button data-tab="game" class="tab-btn active">Game</button>
         <button data-tab="stats" class="tab-btn">Stats</button>
         <button data-tab="settings" class="tab-btn">Settings</button>
+        <button data-tab="dev" class="tab-btn" id="dev-tab-btn" hidden>Developer</button>
       </nav>
       </header>
 <!-- Game tab content -->
@@ -30,6 +31,31 @@
             <span>Strings / s</span>
             <span id="strings-ps" class="stat-value" style="font-size: 0.9em;">0</span>
           </div>
+        <div id="braid-panel" class="braid-panel" hidden>
+          <div class="braid-panel-head">
+            <div class="braid-panel-copy">
+              <h2>Braiding</h2>
+              <p>Reset to spin your highest strings into permanent chain multipliers.</p>
+            </div>
+            <button id="braid-reset" type="button" class="braid-reset-btn">Braid Reset</button>
+          </div>
+          <div class="braid-panel-stats">
+            <div class="braid-stat">
+              <span>Best Strings</span>
+              <span id="braid-best" class="stat-value">0</span>
+            </div>
+            <div class="braid-stat">
+              <span>Last Reset</span>
+              <span id="braid-last" class="stat-value">0</span>
+            </div>
+            <div class="braid-stat">
+              <span>Total Resets</span>
+              <span id="braid-count" class="stat-value">0</span>
+            </div>
+          </div>
+          <div id="braid-paths" class="braid-paths"></div>
+        </div>
+
         <h2>Generator Array</h2>
         <div class="gen-global-actions">
           <button id="max-all" type="button">Max All Generators (M)</button>
@@ -53,6 +79,11 @@
       <section id="tab-settings" class="tab-view">
         <h2> Settings</h2>
         <div id="settings-container"></div>
+      </section>
+<!-- Developer tab content -->
+      <section id="tab-dev" class="tab-view" hidden>
+        <h2> Developer Tools</h2>
+        <div id="dev-tools"></div>
       </section>
 <!-- Footer -->
       <footer class="app-footer"></footer>
