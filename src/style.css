@@ -79,7 +79,8 @@ h1 {
 }
 .braid-path-row {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px 12px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 8px;
@@ -100,9 +101,9 @@ h1 {
 }
 .braid-path-mult {
   font-weight: 600;
-  align-self: center;
+  align-self: flex-start;
   white-space: nowrap;
-  text-align: right;
+  text-align: left;
 }
 .braid-path-row span:last-child {
   font-weight: 600;

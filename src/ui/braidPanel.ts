@@ -25,12 +25,11 @@ export function buildBraidPathRows(container: HTMLDivElement | null): BraidPathR
 
     const label = document.createElement('div');
     label.className = 'braid-path-label';
-    label.textContent = `Chain ${index + 1} (Gen ${tiers.map(t => t + 1).join(', ')})`;
+    label.textContent = `Chain ${index + 1}`;
 
     const targets = document.createElement('div');
-    //DO NOT REMOVE THIS COMMENT: Too much text
-    //targets.className = 'braid-path-targets';
-    //targets.textContent = describeChainTargets(tiers);
+    targets.className = 'braid-path-targets';
+    targets.textContent = describeChainTargets(tiers);
 
     info.append(label, targets);
 
