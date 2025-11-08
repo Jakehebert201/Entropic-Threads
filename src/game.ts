@@ -3,7 +3,7 @@ import { GEN_CFG, newGeneratorState } from "./generators.js";
 import type { GeneratorConfig } from "./generators.js";
 import { nextCost, totalCostFor } from "./economy.js";
 import { SUPER_START, SUPER_STEP, costMultForTier, PER_PURCHASE_MULT, FIBER_LIMIT, FIBER_RESET_BOOST } from "./constants.js";
-import { braidChainMultiplier, applyBraidReset, ensureBraidUnlock } from "./braid.js";
+import { braidChainMultiplier, applyBraidReset, ensureBraidUnlock, updateBraidPeak } from "./braid.js";
 import type { GameState } from "./state.js";
 import { saveState, newBraidState } from "./state.js";
 
@@ -43,6 +43,8 @@ export function tick(s: GameState, dtSeconds: number) {
     s.totalStringsProduced = Decimal.min(FIBER_LIMIT, s.totalStringsProduced.add(baseStrings));
     s.strings = s.strings.add(baseStrings);
   }
+
+  updateBraidPeak(s);
 
   if (applyFiberCap(s)) return;
 
@@ -129,6 +131,7 @@ export function grantStrings(s: GameState, rawAmount: Decimal | number | string)
   }
   if (amount.lessThanOrEqualTo(0)) return false;
   s.strings = s.strings.add(amount);
+  updateBraidPeak(s);
   applyFiberCap(s);
   saveState(s);
   return true;

@@ -1,6 +1,6 @@
 import Decimal from "break_eternity.js";
 import { BRAID_CHAIN_BASE, BRAID_PATHS } from "../constants.js";
-import { braidChainMultiplier } from "../braid.js";
+import { braidChainMultiplier, braidBaseExponent } from "../braid.js";
 import type { GameState } from "../state.js";
 
 export type BraidPathRefs = {
@@ -63,6 +63,12 @@ function formatChainDisplay(mult: Decimal): string {
   return `${baseText}^${expText} (×${formatMultiplier(mult)})`;
 }
 
+function formatBaseExponent(exp: number): string {
+  if (!Number.isFinite(exp) || exp <= 0) return '0.000';
+  const precision = exp >= 100 ? 2 : 3;
+  return exp.toFixed(precision);
+}
+
 export type BraidPanelRenderOptions = {
   state: GameState;
   panel: HTMLDivElement | null;
@@ -71,6 +77,9 @@ export type BraidPanelRenderOptions = {
   bestEl: HTMLSpanElement | null;
   lastEl: HTMLSpanElement | null;
   countEl: HTMLSpanElement | null;
+  currentBaseEl: HTMLSpanElement | null;
+  predictedBaseEl: HTMLSpanElement | null;
+  predictedRow: HTMLDivElement | null;
   formatNumber: (value: Decimal) => string;
 };
 
@@ -82,6 +91,9 @@ export function renderBraidPanel({
   bestEl,
   lastEl,
   countEl,
+  currentBaseEl,
+  predictedBaseEl,
+  predictedRow,
   formatNumber,
 }: BraidPanelRenderOptions) {
   if (!state.braid || !panel) return;
@@ -95,11 +107,23 @@ export function renderBraidPanel({
   if (bestEl) bestEl.textContent = formatNumber(state.braid.bestStrings);
   if (lastEl) lastEl.textContent = formatNumber(state.braid.lastResetStrings);
   if (countEl) countEl.textContent = state.braid.resets.toLocaleString();
+  if (currentBaseEl) {
+    const exponent = braidBaseExponent(state.braid.bestStrings);
+    currentBaseEl.textContent = formatBaseExponent(exponent);
+  }
+  const peakStrings = state.braid.peakStrings ?? state.strings;
+  const canReset = state.braid.unlocked &&
+    peakStrings.greaterThan(0) &&
+    peakStrings.greaterThanOrEqualTo(state.braid.bestStrings);
+
   if (resetButton) {
-    const canReset = state.braid.unlocked &&
-      state.strings.greaterThan(0) &&
-      state.strings.greaterThanOrEqualTo(state.braid.bestStrings);
     resetButton.disabled = !canReset;
+  }
+
+  if (predictedRow) predictedRow.hidden = !canReset;
+  if (predictedBaseEl) {
+    const predictedExponent = braidBaseExponent(peakStrings);
+    predictedBaseEl.textContent = formatBaseExponent(predictedExponent);
   }
 
   refs.forEach((row, idx) => {

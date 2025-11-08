@@ -18,6 +18,7 @@ export type SerializedBraidState = {
   lastResetStrings: string;
   chainMultipliers: string[];
   unlocked: boolean;
+  peakStrings: string;
 };
 
 export type BraidState = {
@@ -26,6 +27,7 @@ export type BraidState = {
   lastResetStrings: Dec;
   chainMultipliers: Decimal[];
   unlocked: boolean;
+  peakStrings: Dec;
 };
 
 export type SerializedFiberState = {
@@ -51,6 +53,7 @@ export function newBraidState(): BraidState {
     lastResetStrings: new Decimal(0),
     chainMultipliers: blankChainMultipliers(),
     unlocked: false,
+    peakStrings: new Decimal(2),
   };
 }
 
@@ -74,6 +77,9 @@ function normalizeSerializedBraid(data?: Partial<SerializedBraidState>): Seriali
     lastResetStrings: typeof data?.lastResetStrings === 'string' ? data.lastResetStrings : String(data?.lastResetStrings ?? '0'),
     chainMultipliers: chain,
     unlocked: data?.unlocked === true,
+    peakStrings: typeof data?.peakStrings === 'string'
+      ? data.peakStrings
+      : String(data?.peakStrings ?? data?.lastResetStrings ?? data?.bestStrings ?? '0'),
   };
 }
 
@@ -92,6 +98,7 @@ function serializeBraidState(braid: BraidState): SerializedBraidState {
     lastResetStrings: braid.lastResetStrings.toString(),
     chainMultipliers: braid.chainMultipliers.map(m => m.toString()),
     unlocked: braid.unlocked,
+    peakStrings: braid.peakStrings.toString(),
   };
 }
 
@@ -122,6 +129,7 @@ function deserializeBraidState(data?: SerializedBraidState): BraidState {
     lastResetStrings: new Decimal(data.lastResetStrings ?? '0'),
     chainMultipliers: results,
     unlocked,
+    peakStrings: new Decimal(data.peakStrings ?? data.lastResetStrings ?? data.bestStrings ?? '0'),
   };
 }
 
@@ -198,6 +206,10 @@ export function deserializeGameState(serialized: Partial<SerializedGameState>): 
   let totalStringsProduced = new Decimal(normalized.totalStringsProduced);
   if (totalStringsProduced.greaterThan(FIBER_LIMIT)) {
     totalStringsProduced = FIBER_LIMIT;
+  }
+  braid.peakStrings = Decimal.max(braid.peakStrings ?? new Decimal(0), strings);
+  if (braid.peakStrings.greaterThan(FIBER_LIMIT)) {
+    braid.peakStrings = FIBER_LIMIT;
   }
   return {
     strings,

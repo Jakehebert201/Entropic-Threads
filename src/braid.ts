@@ -1,5 +1,5 @@
 import Decimal from "break_eternity.js";
-import { BRAID_CHAIN_BASE, BRAID_GAIN_DIVISOR, BRAID_GAIN_EXPONENT, BRAID_GAIN_OFFSET, BRAID_PATHS, BRAID_UNLOCK_STRINGS, BRAID_PURCHASE_BASE, BRAID_PURCHASE_POWER } from "./constants.js";
+import { BRAID_CHAIN_BASE, BRAID_GAIN_DIVISOR, BRAID_GAIN_EXPONENT, BRAID_GAIN_OFFSET, BRAID_PATHS, BRAID_UNLOCK_STRINGS, BRAID_PURCHASE_BASE, BRAID_PURCHASE_POWER, FIBER_LIMIT } from "./constants.js";
 import { newGeneratorState } from "./generators.js";
 import type { GameState } from "./state.js";
 
@@ -22,6 +22,26 @@ function clampLog(strings: Decimal): number {
   const softened = Math.pow(rawLog + BRAID_GAIN_OFFSET, BRAID_GAIN_EXPONENT) - Math.pow(BRAID_GAIN_OFFSET, BRAID_GAIN_EXPONENT);
   const exponent = softened / BRAID_GAIN_DIVISOR;
   return Number.isFinite(exponent) && exponent > 0 ? exponent : 0;
+}
+
+export function braidBaseExponent(strings: Decimal): number {
+  return clampLog(strings);
+}
+
+export function updateBraidPeak(state: GameState): boolean {
+  if (!state?.braid) return false;
+  const currentPeak = state.braid.peakStrings;
+  const cappedStrings = Decimal.min(state.strings, FIBER_LIMIT);
+  if (!currentPeak || cappedStrings.greaterThan(currentPeak)) {
+    state.braid.peakStrings = new Decimal(cappedStrings);
+    return true;
+  }
+  return false;
+}
+
+export function resetBraidPeak(state: GameState) {
+  if (!state?.braid) return;
+  state.braid.peakStrings = new Decimal(state.strings);
 }
 
 function chainPurchaseCount(state: GameState, chainIndex: number): number {
@@ -73,7 +93,7 @@ export function ensureBraidBase(state: GameState): boolean {
 
 export function ensureBraidUnlock(state: GameState): boolean {
   if (state.braid.unlocked) return false;
-  const progress = Decimal.max(state.strings, state.braid.bestStrings);
+  const progress = Decimal.max(state.strings, state.braid.bestStrings, state.braid.peakStrings);
   if (progress.greaterThanOrEqualTo(BRAID_UNLOCK_STRINGS)) {
     state.braid.unlocked = true;
     return true;
@@ -102,17 +122,20 @@ export function braidChainMultiplier(state: GameState, tier: number): Decimal {
 
 export function canBraidReset(state: GameState): boolean {
   if (!state.braid.unlocked) return false;
-  return state.strings.greaterThan(0);
+  return state.braid.peakStrings.greaterThan(0);
 }
 
 export function applyBraidReset(state: GameState): boolean {
   ensureBraidUnlock(state);
   if (!canBraidReset(state)) return false;
-  const totalStrings = new Decimal(state.strings);
+  const peakStrings = Decimal.max(state.braid.peakStrings, state.strings);
+  if (peakStrings.lessThan(state.braid.bestStrings)) {
+    return false;
+  }
 
-  state.braid.lastResetStrings = totalStrings;
-  if (totalStrings.greaterThan(state.braid.bestStrings)) {
-    state.braid.bestStrings = totalStrings;
+  state.braid.lastResetStrings = peakStrings;
+  if (peakStrings.greaterThan(state.braid.bestStrings)) {
+    state.braid.bestStrings = peakStrings;
   }
   state.braid.resets += 1;
 
@@ -122,5 +145,6 @@ export function applyBraidReset(state: GameState): boolean {
   state.gens = newGeneratorState();
   state.lastTick = Date.now();
   state.created = Date.now();
+  resetBraidPeak(state);
   return true;
 }

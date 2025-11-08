@@ -53,6 +53,9 @@ const braidResetBtn = document.getElementById("braid-reset") as HTMLButtonElemen
 const braidBestEl = document.getElementById("braid-best") as HTMLSpanElement | null;
 const braidLastEl = document.getElementById("braid-last") as HTMLSpanElement | null;
 const braidCountEl = document.getElementById("braid-count") as HTMLSpanElement | null;
+const braidCurrentBaseEl = document.getElementById("braid-current-base") as HTMLSpanElement | null;
+const braidPredictedBaseEl = document.getElementById("braid-predicted-base") as HTMLSpanElement | null;
+const braidPredictedRow = document.getElementById("braid-predicted-stat") as HTMLDivElement | null;
 const braidPathsContainer = document.getElementById("braid-paths") as HTMLDivElement | null;
 const statsContainer = document.getElementById("stats-container") as HTMLDivElement | null;
 const fiberResetBtn = document.getElementById("fiber-reset") as HTMLButtonElement | null;
@@ -936,6 +939,9 @@ function renderBraidSection() {
     bestEl: braidBestEl,
     lastEl: braidLastEl,
     countEl: braidCountEl,
+    currentBaseEl: braidCurrentBaseEl,
+    predictedBaseEl: braidPredictedBaseEl,
+    predictedRow: braidPredictedRow,
     formatNumber: format,
   });
 }
